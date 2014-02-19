@@ -1,0 +1,10 @@
+#
+# HISILICON serdes configuration
+#
+
+config HIP04_SERDES
+	bool "Hisilicon SERDES"
+	default y
+	depends on (ARM && ARCH_HIP04)
+	---help---
+	  to be removed
