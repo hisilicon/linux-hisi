@@ -55,6 +55,8 @@ static const char *hi3xxx_compat[] __initconst = {
 DT_MACHINE_START(HI3620, "Hisilicon Hi3620 (Flattened Device Tree)")
 	.map_io		= hi3620_map_io,
 	.dt_compat	= hi3xxx_compat,
+	.l2c_aux_val	= 0x0,
+	.l2c_aux_mask	= 0xffffffff,
 	.smp		= smp_ops(hi3xxx_smp_ops),
 MACHINE_END
 
