@@ -302,12 +302,6 @@ void MCSS_SetPrintkLevel(UINT32 printlevel)
     g_uwPrintkLevel = printlevel;
 }
 
-void MCSS_PrintkBuildTime(void)
-{
-#define	MC_MOD_VERSION "Euler Test"
-    printk("mcss_mod version: %s, build time: %s %s\n", MC_MOD_VERSION, __DATE__, __TIME__);
-}
-
 UINT32 SRE_IoMemInit(VOID)
 {
     int rc = 0;
