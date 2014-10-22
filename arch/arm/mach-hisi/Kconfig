@@ -28,6 +28,7 @@ config ARCH_HIP04
 	select HAVE_ARM_ARCH_TIMER
 	select MCPM if SMP
 	select MCPM_QUAD_CLUSTER if SMP
+	select GPIO_DWAPB
 	help
 	  Support for Hisilicon HiP04 SoC family
 
