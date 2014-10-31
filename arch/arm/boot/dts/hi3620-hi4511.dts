@@ -64,6 +64,101 @@
 			status = "ok";
 		};
 
+		i2c0: i2c@b08000 {
+			status = "ok";
+			pinctrl-names = "default", "idle";
+			pinctrl-0 = <&i2c0_pmx_func &i2c0_cfg_func>;
+			pinctrl-1 = <&i2c0_pmx_idle &i2c0_cfg_func>;
+		};
+
+		i2c1: i2c@b09000 {
+			status = "ok";
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c1_pmx_func &i2c1_cfg_func>;
+			ts_mxt224e: ts@4a {
+				compatible = "atmel,ts-mxt224e";
+				reg = <0x4a>;
+				ldo-supply = <&hi6421_vout6_reg>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&ts_pin_cfg>;
+				atmel-ts,gpio-irq = <&gpio19 5 0>;
+				atmel-ts,gpio-reset = <&gpio19 4 0>;
+				/* min max: x y pressure width */
+				atmel-ts,abs = <0 719 0 1279 0 255 0 255>;
+				atmel-ts,cfg_t6 = /bits/ 8 <0 0 0 0 0 0>;
+				atmel-ts,cfg_t7 = /bits/ 8 <32 255 10>;
+				atmel-ts,cfg_t8 = /bits/ 8 <24 0 1 10 0 0 5 60 10 192>;
+				atmel-ts,cfg_t9 = /bits/ 8 <143 0 0 19 11 0 32 66 2 3 0 2 2 47 10 15 22 10 106 5
+									207 2 0 0 0 0 161 40 183 64 30 20 0 0 1>;
+				atmel-ts,cfg_t15 = /bits/ 8 <0 0 0 0 0 0 0 0 0 0 0>;
+				atmel-ts,cfg_t19 = /bits/ 8 <0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>;
+				atmel-ts,cfg_t23 = /bits/ 8 <0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>;
+				atmel-ts,cfg_t25 = /bits/ 8 <0 0 0 0 0 0 0 0 0 0 0 0 0 0>;
+				atmel-ts,cfg_t40 = /bits/ 8 <0 0 0 0 0>;
+				atmel-ts,cfg_t42 = /bits/ 8 <0 40 40 80 128 0 0 0>;
+				atmel-ts,cfg_t46 = /bits/ 8 <0 3 32 32 0 0 0 0 0>;
+				atmel-ts,cfg_t47 = /bits/ 8 <0 20 50 5 2 40 40 180 0 100>;
+				atmel-ts,cfg_t48 = /bits/ 8 <1 4 10 0 0 0 0 0 1 1 0 0 0 6 6 0 0 63 6 64
+						10 0 20 5 0 38 0 20 0 0 0 0 0 0 0 40 2 2 2 32
+						10 12 20 241 251 0 0 191 40 183 64 30 15 0>;
+				atmel-ts,object_crc = /bits/ 8 <0xFD 0x3B 0x8D>;
+				atmel-ts,cable_config = /bits/ 8 <70 30 32 32>;
+				atmel-ts,cable_config_t7 = /bits/ 8 <32 16 25>;
+				atmel-ts,cable_config_t8 = /bits/ 8 <24 0 5 5 0 0 5 60 10 192>;
+				atmel-ts,cable_config_T9 = /bits/ 8 <139 0 0 19 11 0 32 66 2 3 0 5 2 64 10
+					12 20 10 106 5 207 2 0 0 0 0 161 40 183 64 30 20 0 0 0>;
+				atmel-ts,cable_config_t46 = /bits/ 8 <0 3 40 40 0 0 0 0 0>;
+				atmel-ts,cable_config_t48 = /bits/ 8 <1 128 114 0 0 0 0 0 1 2 0 0 0 6 6
+					0 0 63 6 64 10 0 20 5 0 38 0 20 0 0 0 0 0 0 0
+					40 2 2 2 32 10 12 20 241 251 0 0 191 40 183 64 30 15 0>;
+				atmel-ts,noise_config = /bits/ 8 <70 3 35>;
+				atmel-ts,filter_level = /bits/ 16 <0 0 539 539>;
+				atmel-ts,gcaf_level = /bits/ 8 <8 16 24 32 40>;
+				atmel-ts,atch_nor = /bits/ 8 <0 0 5 60 10 192>;
+				atmel-ts,atch_nor_20s = /bits/ 8 <0 0 255 1 0 0>;
+			};
+		};
+
+		dwmmc1@d04000 {
+			num-slots = <1>;
+			vmmc-supply = <&hi6421_vout0_reg>;
+			vqmmc-supply = <&hi6421_vout5_reg>;
+			/* emmc fifo register value is incorrect */
+			fifo-depth = <0x100>;
+			broken-cd;
+			supports-highspeed;
+			pinctrl-names = "default";
+			pinctrl-0 = <&emmc_pmx_func &emmc_cfg_func &emmc_cfg_clk_func>;
+			slot@0 {
+				reg = <0>;
+				bus-width = <8>;
+				disable-wp;
+			};
+		};
+
+		dwmmc0@d03000 {
+			num-slots = <1>;
+			vmmc-supply = <&hi6421_vout12_reg>;
+			fifo-depth = <0x100>;
+			supports-highspeed;
+			cd-inverted;
+			pinctrl-names = "default";
+			pinctrl-0 = <&sd_pmx_pins &sd_cfg_func1 &sd_cfg_func2>;
+			slot@0 {
+				reg = <0>;
+				bus-width = <4>;
+				disable-wp;
+				cd-gpios = <&gpio10 3 0>;
+			};
+		};
+
+		dwmmc2@d05000 {
+			status = "disabled";
+		};
+
+		dwmmc3@d06000 {
+			status = "disabled";
+		};
 		pmx0: pinmux@803000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&board_pmx_pins>;
@@ -72,6 +167,12 @@
 				pinctrl-single,pins = <
 					0x008 0x0	/* GPIO -- eFUSE_DOUT */
 					0x100 0x0	/* USIM_CLK & USIM_DATA (IOMG63) */
+				>;
+			};
+			sd_pmx_pins: pinmux_sd_pins {
+				pinctrl-single,pins = <
+					0x0bc 0x0	/* SD_CLK, SD_CMD, SD_DATA[0:2] */
+					0x0c0 0x0	/* SD_DATA[3] */
 				>;
 			};
 			uart0_pmx_func: uart0_pmx_func {
@@ -534,10 +635,6 @@
 			emmc_cfg_func: emmc_cfg_func {
 				pinctrl-single,pins = <
 					0x0ac 0		/* eMMC_CMD (IOCFG40) */
-					0x0b0 0		/* eMMC_CLK (IOCFG41) */
-					0x058 0		/* NAND_CS3_N (IOCFG19) */
-					0x064 0		/* NAND_BUSY2_N (IOCFG22) */
-					0x068 0		/* NAND_BUSY3_N (IOCFG23) */
 					0x08c 0		/* NAND_DATA8 (IOCFG32) */
 					0x090 0		/* NAND_DATA9 (IOCFG33) */
 					0x094 0		/* NAND_DATA10 (IOCFG34) */
@@ -551,7 +648,15 @@
 				pinctrl-single,bias-pullup = <1 1 0 1>;
 				pinctrl-single,drive-strength = <0x30 0xf0>;
 			};
-			sd_cfg_func1: sd_cfg_func1 {
+			emmc_cfg_clk_func: pincfg_emmc_clk_func {
+				pinctrl-single,pins = <
+					0x0b0 0		/* eMMC_CLK (IOCFG41) */
+				>;
+				pinctrl-single,bias-pulldown = <0 2 0 2>;
+				pinctrl-single,bias-pullup = <0 1 0 1>;
+				pinctrl-single,drive-strength = <0x30 0xf0>;
+			};
+			sd_cfg_func1: pincfg_sd_f1 {
 				pinctrl-single,pins = <
 					0x18c 0		/* SD_CLK (IOCFG107) */
 					0x190 0		/* SD_CMD (IOCFG108) */
@@ -562,13 +667,14 @@
 			};
 			sd_cfg_func2: sd_cfg_func2 {
 				pinctrl-single,pins = <
+					0x190 0		/* SD_CMD (IOCFG108) */
 					0x194 0		/* SD_DATA0 (IOCFG109) */
 					0x198 0		/* SD_DATA1 (IOCFG110) */
 					0x19c 0		/* SD_DATA2 (IOCFG111) */
 					0x1a0 0		/* SD_DATA3 (IOCFG112) */
 				>;
-				pinctrl-single,bias-pulldown = <2 2 0 2>;
-				pinctrl-single,bias-pullup = <0 1 0 1>;
+				pinctrl-single,bias-pulldown = <0 2 0 2>;
+				pinctrl-single,bias-pullup = <1 1 0 1>;
 				pinctrl-single,drive-strength = <0x70 0xf0>;
 			};
 			nand_cfg_func1: nand_cfg_func1 {
@@ -634,11 +740,30 @@
 				pinctrl-single,bias-pulldown = <2 2 0 2>;
 				pinctrl-single,bias-pullup = <0 1 0 1>;
 			};
+			pmic_int_cfg_func: pincfg_pmic_func {
+				pinctrl-single,pins = <
+					0x018 0		/* GPIO159 (IOCFG003) */
+				>;
+			};
+			/* TP_IRQ need pullup */
+			ts_pin_cfg: pincfg_ts_func {
+				pinctrl-single,pins = <
+					0x010 0		/* GPIO157 (TP_IRQ) */
+				>;
+				pinctrl-single,bias-pulldown = <0 2 0 2>;
+				pinctrl-single,bias-pullup = <1 1 0 1>;
+			};
 		};
 
-		hi6421 {
+		hi6421: hi6421@c00000 {
 			compatible = "hisilicon,hi6421-pmic";
 			reg = <0xc00000 0x0180>; /* 0x60 << 2 */
+			#interrupt-cells = <2>;
+			interrupt-controller;
+
+			gpios = <&gpio19 7 0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pmic_int_cfg_func>;
 
 			regulators {
 				// supply for MLC NAND/ eMMC
@@ -865,6 +990,19 @@
 					regulator-boot-on;
 					regulator-always-on;
 				};
+			};
+
+			onkey {
+				compatible = "hisilicon,hi6421-onkey";
+				interrupt-parent = <&hi6421>;
+				interrupts = <7 0>, <6 0>, <5 0>, <4 0>;
+				interrupt-names = "down", "up", "hold 1s", "hold 10s";
+			};
+
+			rtc {
+				compatible = "hisilicon,hi6421-rtc";
+				interrupt-parent = <&hi6421>;
+				interrupts = <0 0>;
 			};
 		};
 
