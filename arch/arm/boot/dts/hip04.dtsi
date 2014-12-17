@@ -22,7 +22,7 @@
 
 	bootwrapper {
 		compatible = "hisilicon,hip04-bootwrapper";
-		boot-method = <0x10c00000 0x10000>, <0xe0000100 0x1000>;
+		boot-method = <0xe00f0000 0x10000>, <0xe0000100 0x1000>;
 	};
 
 	cpus {
