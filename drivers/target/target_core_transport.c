@@ -1896,8 +1896,6 @@ static bool target_handle_task_attr(struct se_cmd *cmd)
 	return true;
 }
 
-static int __transport_check_aborted_status(struct se_cmd *, int);
-
 void target_execute_cmd(struct se_cmd *cmd)
 {
 	/*
@@ -2950,39 +2948,9 @@ transport_send_check_condition_and_sense(struct se_cmd *cmd,
 }
 EXPORT_SYMBOL(transport_send_check_condition_and_sense);
 
-static int __transport_check_aborted_status(struct se_cmd *cmd, int send_status)
-	__releases(&cmd->t_state_lock)
-	__acquires(&cmd->t_state_lock)
+bool transport_check_aborted_status(struct se_cmd *cmd, int send_status)
 {
-	assert_spin_locked(&cmd->t_state_lock);
-	WARN_ON_ONCE(!irqs_disabled());
-
-	if (!(cmd->transport_state & CMD_T_ABORTED))
-		return 0;
-	/*
-	 * If cmd has been aborted but either no status is to be sent or it has
-	 * already been sent, just return
-	 */
-	if (!send_status || !(cmd->se_cmd_flags & SCF_SEND_DELAYED_TAS)) {
-		if (send_status)
-			cmd->se_cmd_flags |= SCF_SEND_DELAYED_TAS;
-		return 1;
-	}
-
-	cmd->se_cmd_flags &= ~SCF_SEND_DELAYED_TAS;
-
-	return 1;
-}
-
-int transport_check_aborted_status(struct se_cmd *cmd, int send_status)
-{
-	int ret;
-
-	spin_lock_irq(&cmd->t_state_lock);
-	ret = __transport_check_aborted_status(cmd, send_status);
-	spin_unlock_irq(&cmd->t_state_lock);
-
-	return ret;
+	return cmd->transport_state & CMD_T_ABORTED;
 }
 EXPORT_SYMBOL(transport_check_aborted_status);
 
