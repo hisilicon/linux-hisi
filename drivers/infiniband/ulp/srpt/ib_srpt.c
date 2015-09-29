@@ -1161,6 +1161,7 @@ static int srpt_abort_cmd(struct srpt_send_ioctx *ioctx)
 		 * Do nothing - defer abort processing until
 		 * srpt_queue_response() is invoked.
 		 */
+		WARN_ON_ONCE(!(ioctx->cmd.transport_state & CMD_T_ABORTED));
 		break;
 	case SRPT_STATE_NEED_DATA:
 		pr_debug("tag %#llx: RDMA read error\n", ioctx->cmd.tag);
@@ -2289,7 +2290,7 @@ static void srpt_queue_response(struct se_cmd *cmd)
 	}
 	spin_unlock_irqrestore(&ioctx->spinlock, flags);
 
-	if (unlikely(transport_check_aborted_status(&ioctx->cmd, false)
+	if (unlikely((ioctx->cmd.transport_state & CMD_T_ABORTED)
 		     || WARN_ON_ONCE(state == SRPT_STATE_CMD_RSP_SENT))) {
 		atomic_inc(&ch->req_lim_delta);
 		srpt_abort_cmd(ioctx);

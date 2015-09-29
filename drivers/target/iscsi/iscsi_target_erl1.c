@@ -951,8 +951,7 @@ int iscsit_execute_cmd(struct iscsi_cmd *cmd, int ooo)
 			 * should be sent after unsolicited data out with
 			 * ISCSI_FLAG_CMD_FINAL set in iscsi_handle_data_out()
 			 */
-			if (transport_check_aborted_status(se_cmd,
-					(cmd->unsolicited_data == 0)) != 0)
+			if (se_cmd->transport_state & CMD_T_ABORTED)
 				return 0;
 			/*
 			 * Otherwise send CHECK_CONDITION and sense for
@@ -980,8 +979,7 @@ int iscsit_execute_cmd(struct iscsi_cmd *cmd, int ooo)
 				 * WRITEs if no more unsolicitied data is
 				 * expected.
 				 */
-				if (transport_check_aborted_status(se_cmd, 1)
-						!= 0)
+				if (se_cmd->transport_state & CMD_T_ABORTED)
 					return 0;
 
 				iscsit_set_dataout_sequence_values(cmd);
@@ -1000,7 +998,7 @@ int iscsit_execute_cmd(struct iscsi_cmd *cmd, int ooo)
 			 * Send the delayed TASK_ABORTED status for WRITEs if
 			 * no more nsolicitied data is expected.
 			 */
-			if (transport_check_aborted_status(se_cmd, 1) != 0)
+			if (se_cmd->transport_state & CMD_T_ABORTED)
 				return 0;
 
 			iscsit_set_unsoliticed_dataout(cmd);

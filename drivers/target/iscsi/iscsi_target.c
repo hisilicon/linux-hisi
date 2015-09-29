@@ -1518,8 +1518,6 @@ iscsit_check_dataout_hdr(struct iscsi_conn *conn, unsigned char *buf,
 			if (hdr->flags & ISCSI_FLAG_CMD_FINAL)
 				iscsit_stop_dataout_timer(cmd);
 
-			transport_check_aborted_status(se_cmd,
-					(hdr->flags & ISCSI_FLAG_CMD_FINAL));
 			return iscsit_dump_data_payload(conn, payload_length, 1);
 		}
 	} else {
@@ -1535,11 +1533,8 @@ iscsit_check_dataout_hdr(struct iscsi_conn *conn, unsigned char *buf,
 		 */
 		if (se_cmd->transport_state & CMD_T_ABORTED) {
 			if (hdr->flags & ISCSI_FLAG_CMD_FINAL)
-				if (--cmd->outstanding_r2ts < 1) {
+				if (--cmd->outstanding_r2ts < 1)
 					iscsit_stop_dataout_timer(cmd);
-					transport_check_aborted_status(
-							se_cmd, 1);
-				}
 
 			return iscsit_dump_data_payload(conn, payload_length, 1);
 		}

@@ -1901,7 +1901,7 @@ void target_execute_cmd(struct se_cmd *cmd)
 	/*
 	 * If the received CDB has aleady been aborted stop processing it here.
 	 */
-	if (transport_check_aborted_status(cmd, 1) != 0)
+	if (cmd->transport_state & CMD_T_ABORTED)
 		return;
 
 	/*
@@ -2947,12 +2947,6 @@ transport_send_check_condition_and_sense(struct se_cmd *cmd,
 	return cmd->se_tfo->queue_status(cmd);
 }
 EXPORT_SYMBOL(transport_send_check_condition_and_sense);
-
-bool transport_check_aborted_status(struct se_cmd *cmd, int send_status)
-{
-	return cmd->transport_state & CMD_T_ABORTED;
-}
-EXPORT_SYMBOL(transport_check_aborted_status);
 
 static void target_tmr_work(struct work_struct *work)
 {
