@@ -75,25 +75,6 @@ void core_tmr_release_req(struct se_tmr_req *tmr)
 	kfree(tmr);
 }
 
-static void core_tmr_handle_tas_abort(struct se_cmd *cmd, int tas)
-{
-	unsigned long flags;
-	bool remove = true, send_tas;
-	/*
-	 * TASK ABORTED status (TAS) bit support
-	 */
-	spin_lock_irqsave(&cmd->t_state_lock, flags);
-	send_tas = (cmd->transport_state & CMD_T_TAS);
-	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
-
-	if (send_tas) {
-		remove = false;
-		transport_send_task_abort(cmd);
-	}
-
-	transport_cmd_finish_abort(cmd, remove);
-}
-
 static int target_check_cdb_and_preempt(struct list_head *list,
 		struct se_cmd *cmd)
 {
@@ -192,13 +173,13 @@ void core_tmr_abort_task(
 			continue;
 		}
 
-		list_del_init(&se_cmd->se_cmd_list);
+		se_cmd->send_abort_response = false;
 		spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
 
-		cancel_work_sync(&se_cmd->work);
-		transport_wait_for_tasks(se_cmd);
+		while (!wait_for_completion_timeout(&se_cmd->finished, 180 * HZ))
+			pr_debug("ABORT TASK: still waiting for ITT %#llx\n",
+				 ref_tag);
 
-		transport_cmd_finish_abort(se_cmd, true);
 		target_put_sess_cmd(se_cmd);
 
 		printk("ABORT_TASK: Sending TMR_FUNCTION_COMPLETE for"
@@ -295,14 +276,31 @@ static void core_tmr_drain_tmr_list(
 			(preempt_and_abort_list) ? "Preempt" : "", tmr_p,
 			tmr_p->function, tmr_p->response, cmd->t_state);
 
-		cancel_work_sync(&cmd->work);
-		transport_wait_for_tasks(cmd);
-
-		transport_cmd_finish_abort(cmd, 1);
+		while (!wait_for_completion_timeout(&cmd->finished, 180 * HZ))
+			pr_debug("LUN RESET: still waiting for ITT %#llx\n",
+				 cmd->tag);
 		target_put_sess_cmd(cmd);
 	}
 }
 
+/**
+ * core_tmr_drain_state_list() - Abort SCSI commands associated with a device.
+ *
+ * @dev:       Device for which to abort outstanding SCSI commands.
+ * @prout_cmd: Pointer to the SCSI PREEMPT AND ABORT if this function is called
+ *             to realize the PREEMPT AND ABORT functionality.
+ * @tmr_sess:  Session through which the LUN RESET has been received.
+ * @tas:       Task Aborted Status (TAS) bit from the SCSI control mode page.
+ *             A quote from SPC-4, paragraph "7.5.10 Control mode page":
+ *             "A task aborted status (TAS) bit set to zero specifies that
+ *             aborted commands shall be terminated by the device server
+ *             without any response to the application client. A TAS bit set
+ *             to one specifies that commands aborted by the actions of an I_T
+ *             nexus other than the I_T nexus on which the command was
+ *             received shall be completed with TASK ABORTED status."
+ * @preempt_and_abort_list: For the PREEMPT AND ABORT functionality, a list
+ *             with registrations that will be preempted.
+ */
 static void core_tmr_drain_state_list(
 	struct se_device *dev,
 	struct se_cmd *prout_cmd,
@@ -311,6 +309,7 @@ static void core_tmr_drain_state_list(
 	struct list_head *preempt_and_abort_list)
 {
 	LIST_HEAD(drain_task_list);
+	struct se_node_acl *tmr_nacl = tmr_sess ? tmr_sess->se_node_acl : NULL;
 	struct se_session *sess;
 	struct se_cmd *cmd, *next;
 	unsigned long flags;
@@ -340,6 +339,10 @@ static void core_tmr_drain_state_list(
 	 */
 	spin_lock_irqsave(&dev->execute_task_lock, flags);
 	list_for_each_entry_safe(cmd, next, &dev->state_list, state_list) {
+		/* Skip task management functions. */
+		if (cmd->se_cmd_flags & SCF_SCSI_TMR_CDB)
+			continue;
+
 		/*
 		 * For PREEMPT_AND_ABORT usage, only process commands
 		 * with a matching reservation key.
@@ -365,6 +368,8 @@ static void core_tmr_drain_state_list(
 
 		list_move_tail(&cmd->state_list, &drain_task_list);
 		cmd->state_active = false;
+		if (tmr_nacl && tmr_nacl != cmd->se_sess->se_node_acl && tas)
+			cmd->send_abort_response = true;
 	}
 	spin_unlock_irqrestore(&dev->execute_task_lock, flags);
 
@@ -387,17 +392,9 @@ static void core_tmr_drain_state_list(
 			(cmd->transport_state & CMD_T_STOP) != 0,
 			(cmd->transport_state & CMD_T_SENT) != 0);
 
-		/*
-		 * If the command may be queued onto a workqueue cancel it now.
-		 *
-		 * This is equivalent to removal from the execute queue in the
-		 * loop above, but we do it down here given that
-		 * cancel_work_sync may block.
-		 */
-		cancel_work_sync(&cmd->work);
-		transport_wait_for_tasks(cmd);
-
-		core_tmr_handle_tas_abort(cmd, tas);
+		while (!wait_for_completion_timeout(&cmd->finished, 180 * HZ))
+			pr_debug("LUN RESET: still waiting for cmd with ITT %#llx\n",
+				 cmd->tag);
 		target_put_sess_cmd(cmd);
 	}
 }

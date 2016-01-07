@@ -444,6 +444,7 @@ struct se_cmd {
 	unsigned		cmd_wait_set:1;
 	unsigned		unknown_data_length:1;
 	bool			state_active:1;
+	bool			send_abort_response:1;
 	u64			tag; /* SAM command identifier aka task tag */
 	/* Delay for ALUA Active/NonOptimized state access in milliseconds */
 	int			alua_nonop_delay;
@@ -496,6 +497,7 @@ struct se_cmd {
 	spinlock_t		t_state_lock;
 	struct kref		cmd_kref;
 	struct completion	t_transport_stop_comp;
+	struct completion	finished;
 
 	struct work_struct	work;
 
