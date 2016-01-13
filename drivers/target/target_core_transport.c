@@ -569,6 +569,7 @@ void transport_deregister_session(struct se_session *se_sess)
 		core_tpg_wait_for_nacl_pr_ref(se_nacl);
 		core_free_device_list_for_node(se_nacl, se_tpg);
 		se_sess->se_node_acl = NULL;
+		target_put_nacl(se_nacl);
 		kfree(se_nacl);
 	}
 	pr_debug("TARGET_CORE[%s]: Deregistered fabric_sess\n",
