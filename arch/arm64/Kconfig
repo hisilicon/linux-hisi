@@ -231,6 +231,11 @@ config KERNEL_MODE_NEON
 config FIX_EARLYCON_MEM
 	def_bool y
 
+config ARM64_INDIRECT_PIO
+	bool
+	help
+	This enables support for arm64 indirect port io
+
 config PGTABLE_LEVELS
 	int
 	default 2 if ARM64_16K_PAGES && ARM64_VA_BITS_36

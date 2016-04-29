@@ -22,6 +22,7 @@
 #ifdef __KERNEL__
 
 #include <linux/types.h>
+#include <linux/blk_types.h>
 
 #include <asm/byteorder.h>
 #include <asm/barrier.h>
@@ -182,6 +183,61 @@ extern void __iomem *ioremap_cache(phys_addr_t phys_addr, size_t size);
 #define iowrite16be(v,p)	({ __iowmb(); __raw_writew((__force __u16)cpu_to_be16(v), p); })
 #define iowrite32be(v,p)	({ __iowmb(); __raw_writel((__force __u32)cpu_to_be32(v), p); })
 #define iowrite64be(v,p)	({ __iowmb(); __raw_writeq((__force __u64)cpu_to_be64(v), p); })
+
+/*
+ * Convert a physical pointer to a virtual kernel pointer for /dev/mem
+ * access
+ */
+#define xlate_dev_mem_ptr(p)	__va(p)
+
+/*
+ * Convert a virtual cached pointer to an uncached pointer
+ */
+#define xlate_dev_kmem_ptr(p)	p
+
+#define PCIBIOS_MIN_IO 0x1000
+
+#ifdef CONFIG_ARM64_INDIRECT_PIO
+typedef int (*arm64_isa_io)(unsigned long port, bool dir, u32 sz, void *data);
+extern arm64_isa_io arm64_isa_pio;
+extern int arm64_set_isa_pio(arm64_isa_io _arm64_isa_pio);
+
+#define DEF_ISA_PORT_IN(name, ret, port, df_func) \
+static inline ret name(unsigned long port)\
+{				\
+	u32 v;			\
+	u32 size = sizeof(ret);\
+	if ((arm64_isa_pio) && port < PCIBIOS_MIN_IO) {\
+		(void)(*arm64_isa_pio)(port, 1, size, &v);\
+		return (ret)v;\
+	} else {			\
+		return df_func(PCI_IOBASE + port);\
+	} \
+}
+
+#define DEF_ISA_PORT_OUT(name, type, val, port, df_func) \
+static inline void name(type val, unsigned long port)\
+{				\
+	if ((arm64_isa_pio) && port < PCIBIOS_MIN_IO) {\
+		(void)(*arm64_isa_pio)(port, 0, sizeof(type), &val);\
+	} else {			\
+		df_func(val, PCI_IOBASE + port);\
+	} \
+}
+#define inb inb
+DEF_ISA_PORT_IN(inb, u8, port, readb);
+#define inw inw
+DEF_ISA_PORT_IN(inw, u16, port, readw);
+#define inl inl
+DEF_ISA_PORT_IN(inl, u32, port, readl);
+#define outb outb
+DEF_ISA_PORT_OUT(outb, u8, val, port, writeb);
+#define outw outw
+DEF_ISA_PORT_OUT(outw, u16, val, port, writew);
+#define outl outl
+DEF_ISA_PORT_OUT(outl, u32, val, port, writel);
+
+#endif
 
 #include <asm-generic/io.h>
 

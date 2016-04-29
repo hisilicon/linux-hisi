@@ -227,6 +227,24 @@ static void __init request_standard_resources(void)
 	}
 }
 
+#if defined(CONFIG_ARM64_INDIRECT_PIO)
+arm64_isa_io arm64_isa_pio;
+EXPORT_SYMBOL_GPL(arm64_isa_pio);
+
+int arm64_set_isa_pio(arm64_isa_io _arm64_isa_pio)
+{
+	if (arm64_isa_pio) {
+		pr_err("arm64 indirect port io have been hooked by others!\n");
+		return -EINVAL;
+	}
+
+	arm64_isa_pio = _arm64_isa_pio;
+
+	return 0;
+}
+
+#endif
+
 u64 __cpu_logical_map[NR_CPUS] = { [0 ... NR_CPUS-1] = INVALID_HWID };
 
 void __init setup_arch(char **cmdline_p)
