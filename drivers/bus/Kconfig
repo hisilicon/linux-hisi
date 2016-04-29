@@ -92,6 +92,16 @@ config MVEBU_MBUS
 	  Driver needed for the MBus configuration on Marvell EBU SoCs
 	  (Kirkwood, Dove, Orion5x, MV78XX0 and Armada 370/XP).
 
+config HISILICON_LPC
+	bool "Workaround for nonstandard ISA I/O space on Hisilicon Hip0X SoC"
+	depends on ARCH_HISI || COMPILE_TEST
+	select ARM64_INDIRECT_PIO
+	help
+	  This driver support for some legacy driver that use the ISA I/O ports,
+	  in arm64, there is no real ISA I/O ports, so we hook the drivers to in/out
+	  func in arch/arm64/include/asm/io.h, when upper layer drivers call in/out
+	  func to access I/O ports, the lpc driver is called indeed.
+
 config OMAP_INTERCONNECT
 	tristate "OMAP INTERCONNECT DRIVER"
 	depends on ARCH_OMAP2PLUS
