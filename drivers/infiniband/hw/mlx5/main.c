@@ -3424,6 +3424,8 @@ static int __init mlx5_ib_init(void)
 	if (deprecated_prof_sel != 2)
 		pr_warn("prof_sel is deprecated for mlx5_ib, set it for mlx5_core\n");
 
+	mlx5_ib_odp_init();
+
 	err = mlx5_register_interface(&mlx5_ib_interface);
 
 	return err;
