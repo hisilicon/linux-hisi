@@ -54,30 +54,15 @@ DT_MACHINE_START(HI3620, "Hisilicon Hi3620 (Flattened Device Tree)")
 	.dt_compat	= hi3xxx_compat,
 MACHINE_END
 
-static const char *const hix5hd2_compat[] __initconst = {
+static const char *const hisilicon_compat[] __initconst = {
 	"hisilicon,hix5hd2",
-	NULL,
-};
-
-DT_MACHINE_START(HIX5HD2_DT, "Hisilicon HIX5HD2 (Flattened Device Tree)")
-	.dt_compat	= hix5hd2_compat,
-MACHINE_END
-
-static const char *const hip04_compat[] __initconst = {
 	"hisilicon,hip04-d01",
-	NULL,
-};
-
-DT_MACHINE_START(HIP04, "Hisilicon HiP04 (Flattened Device Tree)")
-	.dt_compat	= hip04_compat,
-MACHINE_END
-
-static const char *const hip01_compat[] __initconst = {
 	"hisilicon,hip01",
 	"hisilicon,hip01-ca9x2",
+	"hisilicon,hi3519",
 	NULL,
 };
 
-DT_MACHINE_START(HIP01, "Hisilicon HIP01 (Flattened Device Tree)")
-	.dt_compat      = hip01_compat,
+DT_MACHINE_START(HISILICON_DT, "HiSilicon Soc")
+	.dt_compat	= hisilicon_compat,
 MACHINE_END
