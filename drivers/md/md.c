@@ -312,6 +312,48 @@ static blk_qc_t md_make_request(struct request_queue *q, struct bio *bio)
 	return BLK_QC_T_NONE;
 }
 
+struct md_writesame_data {
+	bio_end_io_t *orig_endio;
+	void *orig_private;
+	struct mddev *mddev;
+};
+
+static void md_writesame_endio(struct bio *bio)
+{
+	struct md_writesame_data *data = bio->bi_private;
+
+	if (bio->bi_error == -EREMOTEIO &&
+	    !bdev_get_queue(bio->bi_bdev)->limits.max_write_same_sectors)
+		data->mddev->queue->limits.max_write_same_sectors = 0;
+
+	bio->bi_private = data->orig_private;
+	bio->bi_end_io = data->orig_endio;
+	bio_endio(bio);
+
+	kfree(data);
+}
+
+void md_writesame_setup(struct mddev *mddev, struct bio *bio)
+{
+	struct md_writesame_data *data;
+
+	/*
+	 * this failure means we ignore a chance to handle writesame failure,
+	 * which isn't critcal, we can handle the failure if new writesame IO
+	 * comes
+	 */
+	data = kmalloc(sizeof(*data), GFP_NOIO | __GFP_NORETRY);
+	if (!data)
+		return;
+	data->orig_endio = bio->bi_end_io;
+	data->orig_private = bio->bi_private;
+	data->mddev = mddev;
+
+	bio->bi_private = data;
+	bio->bi_end_io = md_writesame_endio;
+}
+EXPORT_SYMBOL_GPL(md_writesame_setup);
+
 /* mddev_suspend makes sure no new requests are submitted
  * to the device, and that any requests that have been submitted
  * are completely handled.
