@@ -57,14 +57,6 @@
 	status = "ok";
 };
 
-&usb_ohci {
-	status = "ok";
-};
-
-&usb_ehci {
-	status = "ok";
-};
-
 &eth0 {
 	status = "ok";
 };
