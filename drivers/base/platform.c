@@ -102,6 +102,14 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
 	}
 
 	r = platform_get_resource(dev, IORESOURCE_IRQ, num);
+	if (r && r->flags & IORESOURCE_DISABLED && ACPI_COMPANION(&dev->dev)) {
+		int ret;
+
+		ret = acpi_irq_get(ACPI_HANDLE(&dev->dev), num, r);
+		if (ret)
+			return ret;
+	}
+
 	/*
 	 * The resources may pass trigger flags to the irqs that need
 	 * to be set up. It so happens that the trigger flags for
@@ -1450,4 +1458,3 @@ void __init early_platform_cleanup(void)
 		memset(&pd->dev.devres_head, 0, sizeof(pd->dev.devres_head));
 	}
 }
-
