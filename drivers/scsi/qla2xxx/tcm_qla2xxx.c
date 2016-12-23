@@ -580,10 +580,12 @@ static void tcm_qla2xxx_handle_dif_err(struct qla_tgt_cmd *cmd)
  * Called from qla_target.c:qlt_issue_task_mgmt()
  */
 static int tcm_qla2xxx_handle_tmr(struct qla_tgt_mgmt_cmd *mcmd, uint32_t lun,
-	uint16_t tmr_func, uint32_t tag)
+				  uint16_t tmr_func, uint32_t tag,
+				  bool use_lun)
 {
 	struct fc_port *sess = mcmd->sess;
 	struct se_cmd *se_cmd = &mcmd->se_cmd;
+	unsigned int flags = TARGET_SCF_ACK_KREF;
 	int transl_tmr_func = 0;
 
 	switch (tmr_func) {
@@ -621,8 +623,10 @@ static int tcm_qla2xxx_handle_tmr(struct qla_tgt_mgmt_cmd *mcmd, uint32_t lun,
 		return -ENOSYS;
 	}
 
+	if (!use_lun)
+		flags |= TARGET_SCF_IGNORE_TMR_LUN;
 	return target_submit_tmr(se_cmd, sess->se_sess, NULL, lun, mcmd,
-	    transl_tmr_func, GFP_ATOMIC, tag, TARGET_SCF_ACK_KREF);
+				 transl_tmr_func, GFP_ATOMIC, tag, flags);
 }
 
 static int tcm_qla2xxx_queue_data_in(struct se_cmd *se_cmd)

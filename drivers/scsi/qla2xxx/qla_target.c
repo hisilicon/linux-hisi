@@ -1818,39 +1818,8 @@ static int __qlt_24xx_handle_abts(struct scsi_qla_host *vha,
 	struct abts_recv_from_24xx *abts, struct fc_port *sess)
 {
 	struct qla_hw_data *ha = vha->hw;
-	struct se_session *se_sess = sess->se_sess;
 	struct qla_tgt_mgmt_cmd *mcmd;
-	struct se_cmd *se_cmd;
-	u32 lun = 0;
 	int rc;
-	bool found_lun = false;
-	unsigned long flags;
-
-	spin_lock_irqsave(&se_sess->sess_cmd_lock, flags);
-	list_for_each_entry(se_cmd, &se_sess->sess_cmd_list, se_cmd_list) {
-		struct qla_tgt_cmd *cmd =
-			container_of(se_cmd, struct qla_tgt_cmd, se_cmd);
-		if (se_cmd->tag == abts->exchange_addr_to_abort) {
-			lun = cmd->unpacked_lun;
-			found_lun = true;
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
-
-	/* cmd not in LIO lists, look in qla list */
-	if (!found_lun) {
-		if (abort_cmd_for_tag(vha, abts->exchange_addr_to_abort)) {
-			/* send TASK_ABORT response immediately */
-			qlt_24xx_send_abts_resp(vha, abts, FCP_TMF_CMPL, false);
-			return 0;
-		} else {
-			ql_dbg(ql_dbg_tgt_mgt, vha, 0xf081,
-			    "unable to find cmd in driver or LIO for tag 0x%x\n",
-			    abts->exchange_addr_to_abort);
-			return -ENOENT;
-		}
-	}
 
 	ql_dbg(ql_dbg_tgt_mgt, vha, 0xf00f,
 	    "qla_target(%d): task abort (tag=%d)\n",
@@ -1870,17 +1839,27 @@ static int __qlt_24xx_handle_abts(struct scsi_qla_host *vha,
 	mcmd->reset_count = vha->hw->chip_reset;
 	mcmd->tmr_func = QLA_TGT_ABTS;
 
-	rc = ha->tgt.tgt_ops->handle_tmr(mcmd, lun, mcmd->tmr_func,
-	    abts->exchange_addr_to_abort);
-	if (rc != 0) {
-		ql_dbg(ql_dbg_tgt_mgt, vha, 0xf052,
-		    "qla_target(%d):  tgt_ops->handle_tmr()"
-		    " failed: %d", vha->vp_idx, rc);
-		mempool_free(mcmd, qla_tgt_mgmt_cmd_mempool);
-		return -EFAULT;
+	rc = ha->tgt.tgt_ops->handle_tmr(mcmd, -1, mcmd->tmr_func,
+					 abts->exchange_addr_to_abort, false);
+	if (rc == 0)
+		return 0;
+
+	ql_dbg(ql_dbg_tgt_mgt, vha, 0xf052,
+	       "qla_target(%d):  tgt_ops->handle_tmr() failed: %d",
+	       vha->vp_idx, rc);
+	mempool_free(mcmd, qla_tgt_mgmt_cmd_mempool);
+
+	/* cmd not in LIO lists, look in qla list */
+	if (abort_cmd_for_tag(vha, abts->exchange_addr_to_abort)) {
+		/* send TASK_ABORT response immediately */
+		qlt_24xx_send_abts_resp(vha, abts, FCP_TMF_CMPL, false);
+		return 0;
 	}
 
-	return 0;
+	ql_dbg(ql_dbg_tgt_mgt, vha, 0xf081,
+	       "unable to find cmd in driver or LIO for tag 0x%x\n",
+	       abts->exchange_addr_to_abort);
+	return -ENOENT;
 }
 
 /*
@@ -4195,7 +4174,7 @@ static int qlt_issue_task_mgmt(struct fc_port *sess, u64 lun,
 	    break;
 	}
 
-	res = ha->tgt.tgt_ops->handle_tmr(mcmd, lun, mcmd->tmr_func, 0);
+	res = ha->tgt.tgt_ops->handle_tmr(mcmd, lun, mcmd->tmr_func, 0, true);
 	if (res != 0) {
 		ql_dbg(ql_dbg_tgt_tmr, vha, 0x1000b,
 		    "qla_target(%d): tgt.tgt_ops->handle_tmr() failed: %d\n",
@@ -4272,8 +4251,9 @@ static int __qlt_abort_task(struct scsi_qla_host *vha,
 	mcmd->reset_count = vha->hw->chip_reset;
 	mcmd->tmr_func = QLA_TGT_2G_ABORT_TASK;
 
-	rc = ha->tgt.tgt_ops->handle_tmr(mcmd, unpacked_lun, mcmd->tmr_func,
-	    le16_to_cpu(iocb->u.isp2x.seq_id));
+	rc = ha->tgt.tgt_ops->handle_tmr(mcmd, unpacked_lun, TMR_ABORT_TASK,
+					 le16_to_cpu(iocb->u.isp2x.seq_id),
+					 true);
 	if (rc != 0) {
 		ql_dbg(ql_dbg_tgt_mgt, vha, 0xf060,
 		    "qla_target(%d): tgt_ops->handle_tmr() failed: %d\n",
