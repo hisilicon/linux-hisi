@@ -149,6 +149,13 @@ static bool __target_check_io_state(struct se_cmd *se_cmd,
 	return kref_get_unless_zero(&se_cmd->cmd_kref);
 }
 
+/**
+ * core_tmr_abort_task - abort a SCSI command
+ * @dev: LUN specified in task management function or NULL if no LUN has been
+ *	 specified.
+ * @tmr: Task management function.
+ * @se_sess: Session a.k.a. I_T nexus.
+ */
 void core_tmr_abort_task(
 	struct se_device *dev,
 	struct se_tmr_req *tmr,
@@ -161,7 +168,7 @@ void core_tmr_abort_task(
 	spin_lock_irqsave(&se_sess->sess_cmd_lock, flags);
 	list_for_each_entry(se_cmd, &se_sess->sess_cmd_list, se_cmd_list) {
 
-		if (dev != se_cmd->se_dev)
+		if (dev && dev != se_cmd->se_dev)
 			continue;
 
 		/* skip task management functions, including tmr->task_cmd */
@@ -177,6 +184,13 @@ void core_tmr_abort_task(
 
 		if (!__target_check_io_state(se_cmd, se_sess, 0))
 			continue;
+
+		if (!tmr->tmr_dev &&
+		    transport_lookup_tmr_lun(tmr->task_cmd,
+					     se_cmd->orig_fe_lun) < 0) {
+			target_put_sess_cmd(se_cmd);
+			continue;
+		}
 
 		list_del_init(&se_cmd->se_cmd_list);
 		spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);

@@ -1599,18 +1599,18 @@ static void target_complete_tmr_failure(struct work_struct *work)
 }
 
 /**
- * target_submit_tmr - lookup unpacked lun and submit uninitialized se_cmd
- *                     for TMR CDBs
+ * target_submit_tmr - submit a SCSI task management function to the target core
  *
  * @se_cmd: command descriptor to submit
  * @se_sess: associated se_sess for endpoint
  * @sense: pointer to SCSI sense buffer
- * @unpacked_lun: unpacked LUN to reference for struct se_lun
+ * @unpacked_lun: LUN the TMR applies to. Ignored if TARGET_SCF_IGNORE_TMR_LUN
+ *	has been set in @flags.
  * @fabric_context: fabric context for TMR req
  * @tm_type: Type of TM request
  * @gfp: gfp type for caller
  * @tag: referenced task tag for TMR_ABORT_TASK
- * @flags: submit cmd flags
+ * @flags: submit cmd flags (TARGET_SCF_*).
  *
  * Callable from all contexts.
  **/
@@ -1646,7 +1646,14 @@ int target_submit_tmr(struct se_cmd *se_cmd, struct se_session *se_sess,
 		return ret;
 	}
 
-	ret = transport_lookup_tmr_lun(se_cmd, unpacked_lun);
+	if (flags & TARGET_SCF_IGNORE_TMR_LUN) {
+		WARN_ON_ONCE(tm_type != TMR_ABORT_TASK);
+		se_cmd->se_lun = NULL;
+		se_cmd->se_dev = NULL;
+		se_cmd->se_tmr_req->tmr_dev = NULL;
+	} else {
+		ret = transport_lookup_tmr_lun(se_cmd, unpacked_lun);
+	}
 	if (ret) {
 		/*
 		 * For callback during failure handling, push this work off
@@ -1656,6 +1663,7 @@ int target_submit_tmr(struct se_cmd *se_cmd, struct se_session *se_sess,
 		schedule_work(&se_cmd->work);
 		return 0;
 	}
+	WARN_ON_ONCE(tm_type != TMR_ABORT_TASK && !se_cmd->se_dev);
 	transport_generic_handle_tmr(se_cmd);
 	return 0;
 }
@@ -3134,8 +3142,16 @@ check_stop:
 	transport_cmd_check_stop_to_fabric(cmd);
 }
 
-int transport_generic_handle_tmr(
-	struct se_cmd *cmd)
+/**
+ * transport_generic_handle_tmr - queue a task management function
+ *
+ * Note: task management functions for which flag TARGET_SCF_IGNORE_TMR_LUN
+ * has been set are queued on a separate workqueue. This may cause out-of-order
+ * execution of task management functions. That is fine though since the
+ * SCSI Architecture Manual does not require that task management functions
+ * are executed in order.
+ */
+int transport_generic_handle_tmr(struct se_cmd *cmd)
 {
 	unsigned long flags;
 
