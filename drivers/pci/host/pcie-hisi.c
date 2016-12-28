@@ -24,7 +24,7 @@
 #include <linux/regmap.h>
 #include "../pci.h"
 
-#if defined(CONFIG_ACPI) && defined(CONFIG_PCI_QUIRKS)
+#if defined(CONFIG_PCI_HISI) || (defined(CONFIG_ACPI) && defined(CONFIG_PCI_QUIRKS))
 
 static int hisi_pcie_acpi_rd_conf(struct pci_bus *bus, u32 devfn, int where,
 				  int size, u32 *val)
@@ -73,6 +73,8 @@ static void __iomem *hisi_pcie_map_bus(struct pci_bus *bus, unsigned int devfn,
 	else
 		return pci_ecam_map_bus(bus, devfn, where);
 }
+
+#if defined(CONFIG_ACPI) && defined(CONFIG_PCI_QUIRKS)
 
 static int hisi_pcie_init(struct pci_config_window *cfg)
 {
@@ -263,6 +265,7 @@ static int hisi_pcie_probe(struct platform_device *pdev)
 	struct resource *reg;
 	struct device_driver *driver;
 	int ret;
+	struct pci_ecam_ops *ops;
 
 	hisi_pcie = devm_kzalloc(dev, sizeof(*hisi_pcie), GFP_KERNEL);
 	if (!hisi_pcie)
@@ -273,6 +276,11 @@ static int hisi_pcie_probe(struct platform_device *pdev)
 	driver = dev->driver;
 
 	match = of_match_device(driver->of_match_table, dev);
+	if (!strcmp(match->compatible, "hisilicon,pcie-almost-ecam")) {
+		ops = (struct pci_ecam_ops *)match->data;
+		return pci_host_common_probe(pdev, ops);
+	}
+
 	hisi_pcie->soc_ops = (struct pcie_soc_ops *) match->data;
 
 	hisi_pcie->subctrl =
@@ -302,6 +310,41 @@ static struct pcie_soc_ops hip06_ops = {
 		&hisi_pcie_link_up_hip06
 };
 
+
+static int hisi_pcie_platform_init(struct pci_config_window *cfg)
+{
+	struct device *dev = cfg->parent;
+	struct resource *res;
+	void __iomem *reg_base;
+	struct platform_device *pdev = to_platform_device(dev);
+
+	if (!dev->of_node)
+		return -EINVAL;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (!res) {
+		dev_err(dev, "missing \"reg[1]\"property\n");
+		return -EINVAL;
+	}
+
+	reg_base = devm_ioremap(dev, res->start, resource_size(res));
+	if (!reg_base)
+		return -ENOMEM;
+
+	cfg->priv = reg_base;
+	return 0;
+}
+
+struct pci_ecam_ops hisi_pcie_platform_ops = {
+	.bus_shift    = 20,
+	.init         =  hisi_pcie_platform_init,
+	.pci_ops      = {
+		.map_bus    = hisi_pcie_map_bus,
+		.read       = hisi_pcie_acpi_rd_conf,
+		.write      = hisi_pcie_acpi_wr_conf,
+	}
+};
+
 static const struct of_device_id hisi_pcie_of_match[] = {
 	{
 			.compatible = "hisilicon,hip05-pcie",
@@ -310,6 +353,11 @@ static const struct of_device_id hisi_pcie_of_match[] = {
 	{
 			.compatible = "hisilicon,hip06-pcie",
 			.data	    = (void *) &hip06_ops,
+	},
+
+	{
+			.compatible = "hisilicon,pcie-almost-ecam",
+			.data	    = (void *) &hisi_pcie_platform_ops,
 	},
 	{},
 };
@@ -323,4 +371,5 @@ static struct platform_driver hisi_pcie_driver = {
 };
 builtin_platform_driver(hisi_pcie_driver);
 
+#endif
 #endif
