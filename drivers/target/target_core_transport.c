@@ -2498,28 +2498,25 @@ static void transport_write_pending_qf(struct se_cmd *cmd)
 }
 
 static bool
-__transport_wait_for_tasks(struct se_cmd *, bool, bool *, bool *,
-			   unsigned long *flags);
+__transport_wait_for_tasks(struct se_cmd *, bool, unsigned long *flags);
 
-static void target_wait_free_cmd(struct se_cmd *cmd, bool *aborted, bool *tas)
+static void target_wait_free_cmd(struct se_cmd *cmd)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&cmd->t_state_lock, flags);
-	__transport_wait_for_tasks(cmd, true, aborted, tas, &flags);
+	__transport_wait_for_tasks(cmd, true, &flags);
 	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
 }
 
 int transport_generic_free_cmd(struct se_cmd *cmd, int wait_for_tasks)
 {
-	bool aborted = false, tas = false;
-
 	if (!(cmd->se_cmd_flags & SCF_SE_LUN_CMD)) {
 		if (wait_for_tasks && (cmd->se_cmd_flags & SCF_SCSI_TMR_CDB))
-			target_wait_free_cmd(cmd, &aborted, &tas);
+			target_wait_free_cmd(cmd);
 	} else {
 		if (wait_for_tasks)
-			target_wait_free_cmd(cmd, &aborted, &tas);
+			target_wait_free_cmd(cmd);
 		/*
 		 * Handle WRITE failure case where transport_generic_new_cmd()
 		 * has already added se_cmd to state_list, but fabric has
@@ -2666,9 +2663,8 @@ void transport_clear_lun_ref(struct se_lun *lun)
 	wait_for_completion(&lun->lun_ref_comp);
 }
 
-static bool
-__transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
-			   bool *aborted, bool *tas, unsigned long *flags)
+static bool __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
+				       unsigned long *flags)
 	__releases(&cmd->t_state_lock)
 	__acquires(&cmd->t_state_lock)
 {
@@ -2678,12 +2674,6 @@ __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
 
 	if (fabric_stop)
 		cmd->transport_state |= CMD_T_FABRIC_STOP;
-
-	if (cmd->transport_state & CMD_T_ABORTED)
-		*aborted = true;
-
-	if (cmd->transport_state & CMD_T_TAS)
-		*tas = true;
 
 	if (!(cmd->se_cmd_flags & SCF_SE_LUN_CMD) &&
 	    !(cmd->se_cmd_flags & SCF_SCSI_TMR_CDB))
@@ -2696,7 +2686,7 @@ __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
 	if (!(cmd->transport_state & CMD_T_ACTIVE))
 		return false;
 
-	if (fabric_stop && *aborted)
+	if (fabric_stop && (cmd->transport_state & CMD_T_ABORTED))
 		return false;
 
 	cmd->transport_state |= CMD_T_STOP;
@@ -2729,10 +2719,10 @@ __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
 bool transport_wait_for_tasks(struct se_cmd *cmd)
 {
 	unsigned long flags;
-	bool ret, aborted = false, tas = false;
+	bool ret;
 
 	spin_lock_irqsave(&cmd->t_state_lock, flags);
-	ret = __transport_wait_for_tasks(cmd, false, &aborted, &tas, &flags);
+	ret = __transport_wait_for_tasks(cmd, false, &flags);
 	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
 
 	return ret;
