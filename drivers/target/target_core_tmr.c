@@ -114,10 +114,6 @@ static bool __target_check_io_state(struct se_cmd *se_cmd,
 		return false;
 	}
 	se_cmd->transport_state |= CMD_T_ABORTED;
-
-	if ((tmr_sess != se_cmd->se_sess) && tas)
-		se_cmd->transport_state |= CMD_T_TAS;
-
 	spin_unlock(&se_cmd->t_state_lock);
 
 	return kref_get_unless_zero(&se_cmd->cmd_kref);
