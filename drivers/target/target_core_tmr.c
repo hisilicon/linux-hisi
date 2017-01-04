@@ -90,8 +90,7 @@ static int target_check_cdb_and_preempt(struct list_head *list,
 	return 1;
 }
 
-static bool __target_check_io_state(struct se_cmd *se_cmd,
-				    struct se_session *tmr_sess, int tas)
+static bool __target_check_io_state(struct se_cmd *se_cmd)
 {
 	struct se_session *sess = se_cmd->se_sess;
 
@@ -152,7 +151,7 @@ void core_tmr_abort_task(
 		printk("ABORT_TASK: Found referenced %s task_tag: %llu\n",
 			se_cmd->se_tfo->get_fabric_name(), ref_tag);
 
-		if (!__target_check_io_state(se_cmd, se_sess, 0))
+		if (!__target_check_io_state(se_cmd))
 			continue;
 
 		if (!tmr->tmr_dev &&
@@ -224,7 +223,7 @@ static void core_tmr_drain_tmr_list(
 			continue;
 
 		spin_lock(&sess->sess_cmd_lock);
-		rc = __target_check_io_state(cmd, sess, 0);
+		rc = __target_check_io_state(cmd);
 		spin_unlock(&sess->sess_cmd_lock);
 
 		if (!rc) {
@@ -330,7 +329,7 @@ static void core_tmr_drain_state_list(
 			continue;
 
 		spin_lock(&sess->sess_cmd_lock);
-		rc = __target_check_io_state(cmd, tmr_sess, tas);
+		rc = __target_check_io_state(cmd);
 		spin_unlock(&sess->sess_cmd_lock);
 		if (!rc)
 			continue;
