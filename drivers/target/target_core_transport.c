@@ -605,11 +605,6 @@ static int transport_cmd_check_stop_to_fabric(struct se_cmd *cmd)
 
 	target_remove_from_state_list(cmd);
 
-	/*
-	 * Clear struct se_cmd->se_lun before the handoff to FE.
-	 */
-	cmd->se_lun = NULL;
-
 	spin_lock_irqsave(&cmd->t_state_lock, flags);
 	/*
 	 * Determine if frontend context caller is requesting the stopping of
@@ -634,17 +629,6 @@ static int transport_cmd_check_stop_to_fabric(struct se_cmd *cmd)
 	 */
 	return cmd->se_tfo->check_stop_free ? cmd->se_tfo->check_stop_free(cmd)
 		: 0;
-}
-
-static void transport_lun_remove_cmd(struct se_cmd *cmd)
-{
-	struct se_lun *lun = cmd->se_lun;
-
-	if (!lun)
-		return;
-
-	if (cmpxchg(&cmd->lun_ref_active, true, false))
-		percpu_ref_put(&lun->lun_ref);
 }
 
 static void target_complete_failure_work(struct work_struct *work)
@@ -681,8 +665,6 @@ static unsigned char *transport_get_sense_buffer(struct se_cmd *cmd)
 static void transport_handle_abort(struct se_cmd *cmd)
 {
 	bool ack_kref = cmd->se_cmd_flags & SCF_ACK_KREF;
-
-	transport_lun_remove_cmd(cmd);
 
 	if (cmd->send_abort_response) {
 		cmd->scsi_status = SAM_STAT_TASK_ABORTED;
@@ -1753,7 +1735,6 @@ void transport_generic_request_failure(struct se_cmd *cmd,
 		goto queue_full;
 
 check_stop:
-	transport_lun_remove_cmd(cmd);
 	transport_cmd_check_stop_to_fabric(cmd);
 	return;
 
@@ -2031,7 +2012,6 @@ out:
 		transport_handle_queue_full(cmd, cmd->se_dev);
 		return;
 	}
-	transport_lun_remove_cmd(cmd);
 	transport_cmd_check_stop_to_fabric(cmd);
 }
 
@@ -2105,7 +2085,6 @@ static void target_complete_ok_work(struct work_struct *work)
 		if (ret == -EAGAIN || ret == -ENOMEM)
 			goto queue_full;
 
-		transport_lun_remove_cmd(cmd);
 		transport_cmd_check_stop_to_fabric(cmd);
 		return;
 	}
@@ -2131,7 +2110,6 @@ static void target_complete_ok_work(struct work_struct *work)
 			if (ret == -EAGAIN || ret == -ENOMEM)
 				goto queue_full;
 
-			transport_lun_remove_cmd(cmd);
 			transport_cmd_check_stop_to_fabric(cmd);
 			return;
 		}
@@ -2156,7 +2134,6 @@ queue_rsp:
 			if (ret == -EAGAIN || ret == -ENOMEM)
 				goto queue_full;
 
-			transport_lun_remove_cmd(cmd);
 			transport_cmd_check_stop_to_fabric(cmd);
 			return;
 		}
@@ -2192,7 +2169,6 @@ queue_status:
 		break;
 	}
 
-	transport_lun_remove_cmd(cmd);
 	transport_cmd_check_stop_to_fabric(cmd);
 	return;
 
@@ -2507,9 +2483,6 @@ int transport_generic_free_cmd(struct se_cmd *cmd, int wait_for_tasks)
 		 */
 		if (cmd->state_active)
 			target_remove_from_state_list(cmd);
-
-		if (cmd->se_lun)
-			transport_lun_remove_cmd(cmd);
 	}
 	BUG_ON(!cmd->se_tfo);
 	return target_put_sess_cmd(cmd);
@@ -2569,6 +2542,9 @@ static void target_release_cmd_kref(struct kref *kref)
 	struct se_cmd *se_cmd = container_of(kref, struct se_cmd, cmd_kref);
 	struct se_session *se_sess = se_cmd->se_sess;
 	unsigned long flags;
+
+	if (se_cmd->lun_ref_active)
+		percpu_ref_put(&se_cmd->se_lun->lun_ref);
 
 	complete_all(&se_cmd->finished);
 
