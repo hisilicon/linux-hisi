@@ -2497,7 +2497,7 @@ static void transport_write_pending_qf(struct se_cmd *cmd)
 	}
 }
 
-static bool
+static void
 __transport_wait_for_tasks(struct se_cmd *, bool, unsigned long *flags);
 
 static void target_wait_free_cmd(struct se_cmd *cmd)
@@ -2663,7 +2663,7 @@ void transport_clear_lun_ref(struct se_lun *lun)
 	wait_for_completion(&lun->lun_ref_comp);
 }
 
-static bool __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
+static void __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
 				       unsigned long *flags)
 	__releases(&cmd->t_state_lock)
 	__acquires(&cmd->t_state_lock)
@@ -2677,17 +2677,17 @@ static bool __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
 
 	if (!(cmd->se_cmd_flags & SCF_SE_LUN_CMD) &&
 	    !(cmd->se_cmd_flags & SCF_SCSI_TMR_CDB))
-		return false;
+		return;
 
 	if (!(cmd->se_cmd_flags & SCF_SUPPORTED_SAM_OPCODE) &&
 	    !(cmd->se_cmd_flags & SCF_SCSI_TMR_CDB))
-		return false;
+		return;
 
 	if (!(cmd->transport_state & CMD_T_ACTIVE))
-		return false;
+		return;
 
 	if (fabric_stop && (cmd->transport_state & CMD_T_ABORTED))
-		return false;
+		return;
 
 	cmd->transport_state |= CMD_T_STOP;
 
@@ -2704,8 +2704,6 @@ static bool __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
 
 	pr_debug("wait_for_tasks: Stopped wait_for_completion(&cmd->"
 		 "t_transport_stop_comp) for ITT: 0x%08llx\n", cmd->tag);
-
-	return true;
 }
 
 /**
@@ -2716,16 +2714,13 @@ static bool __transport_wait_for_tasks(struct se_cmd *cmd, bool fabric_stop,
  * been set, sets the CMD_T_STOP flag, waits for t_transport_stop_comp and
  * clears CMD_T_STOP and CMD_T_ACTIVE.
  */
-bool transport_wait_for_tasks(struct se_cmd *cmd)
+void transport_wait_for_tasks(struct se_cmd *cmd)
 {
 	unsigned long flags;
-	bool ret;
 
 	spin_lock_irqsave(&cmd->t_state_lock, flags);
-	ret = __transport_wait_for_tasks(cmd, false, &flags);
+	__transport_wait_for_tasks(cmd, false, &flags);
 	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
-
-	return ret;
 }
 EXPORT_SYMBOL(transport_wait_for_tasks);
 

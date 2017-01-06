@@ -151,7 +151,7 @@ void	target_execute_cmd(struct se_cmd *cmd);
 
 int	transport_generic_free_cmd(struct se_cmd *, int);
 
-bool	transport_wait_for_tasks(struct se_cmd *);
+void	transport_wait_for_tasks(struct se_cmd *);
 int	transport_send_check_condition_and_sense(struct se_cmd *,
 		sense_reason_t, int);
 int	target_get_sess_cmd(struct se_cmd *, bool);
