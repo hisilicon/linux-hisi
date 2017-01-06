@@ -98,9 +98,8 @@ static bool __target_check_io_state(struct se_cmd *se_cmd,
 	assert_spin_locked(&sess->sess_cmd_lock);
 	WARN_ON_ONCE(!irqs_disabled());
 	/*
-	 * If command already reached CMD_T_COMPLETE state within
-	 * target_complete_cmd() or CMD_T_FABRIC_STOP due to shutdown,
-	 * this se_cmd has been passed to fabric driver and will
+	 * If a command has already reached the CMD_T_COMPLETE state,
+	 * it has already been passed to the fabric driver and will
 	 * not be aborted.
 	 *
 	 * Otherwise, obtain a local se_cmd->cmd_kref now for TMR
@@ -108,15 +107,9 @@ static bool __target_check_io_state(struct se_cmd *se_cmd,
 	 * long as se_cmd->cmd_kref is still active unless zero.
 	 */
 	spin_lock(&se_cmd->t_state_lock);
-	if (se_cmd->transport_state & (CMD_T_COMPLETE | CMD_T_FABRIC_STOP)) {
-		pr_debug("Attempted to abort io tag: %llu already complete or"
-			" fabric stop, skipping\n", se_cmd->tag);
-		spin_unlock(&se_cmd->t_state_lock);
-		return false;
-	}
-	if (sess->sess_tearing_down) {
-		pr_debug("Attempted to abort io tag: %llu already shutdown,"
-			" skipping\n", se_cmd->tag);
+	if (se_cmd->transport_state & CMD_T_COMPLETE) {
+		pr_debug("Response for command with tag %llu is being sent to initiator, skipping\n",
+			 se_cmd->tag);
 		spin_unlock(&se_cmd->t_state_lock);
 		return false;
 	}
@@ -236,18 +229,7 @@ static void core_tmr_drain_tmr_list(
 
 		spin_lock(&sess->sess_cmd_lock);
 		spin_lock(&cmd->t_state_lock);
-		if (!(cmd->transport_state & CMD_T_ACTIVE) ||
-		     (cmd->transport_state & CMD_T_FABRIC_STOP)) {
-			spin_unlock(&cmd->t_state_lock);
-			spin_unlock(&sess->sess_cmd_lock);
-			continue;
-		}
-		if (cmd->t_state == TRANSPORT_ISTATE_PROCESSING) {
-			spin_unlock(&cmd->t_state_lock);
-			spin_unlock(&sess->sess_cmd_lock);
-			continue;
-		}
-		if (sess->sess_tearing_down) {
+		if (!(cmd->transport_state & CMD_T_ACTIVE)) {
 			spin_unlock(&cmd->t_state_lock);
 			spin_unlock(&sess->sess_cmd_lock);
 			continue;
