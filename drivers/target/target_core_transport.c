@@ -603,8 +603,6 @@ static int transport_cmd_check_stop_to_fabric(struct se_cmd *cmd)
 {
 	unsigned long flags;
 
-	target_remove_from_state_list(cmd);
-
 	spin_lock_irqsave(&cmd->t_state_lock, flags);
 	/*
 	 * Determine if frontend context caller is requesting the stopping of
@@ -2476,13 +2474,6 @@ int transport_generic_free_cmd(struct se_cmd *cmd, int wait_for_tasks)
 	} else {
 		if (wait_for_tasks)
 			target_wait_free_cmd(cmd);
-		/*
-		 * Handle WRITE failure case where transport_generic_new_cmd()
-		 * has already added se_cmd to state_list, but fabric has
-		 * failed command before I/O submission.
-		 */
-		if (cmd->state_active)
-			target_remove_from_state_list(cmd);
 	}
 	BUG_ON(!cmd->se_tfo);
 	return target_put_sess_cmd(cmd);
@@ -2542,6 +2533,8 @@ static void target_release_cmd_kref(struct kref *kref)
 	struct se_cmd *se_cmd = container_of(kref, struct se_cmd, cmd_kref);
 	struct se_session *se_sess = se_cmd->se_sess;
 	unsigned long flags;
+
+	target_remove_from_state_list(se_cmd);
 
 	if (se_cmd->lun_ref_active)
 		percpu_ref_put(&se_cmd->se_lun->lun_ref);
