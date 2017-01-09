@@ -114,7 +114,7 @@ static bool __target_check_io_state(struct se_cmd *se_cmd,
 		spin_unlock(&se_cmd->t_state_lock);
 		return false;
 	}
-	if (sess->sess_tearing_down || se_cmd->cmd_wait_set) {
+	if (sess->sess_tearing_down) {
 		pr_debug("Attempted to abort io tag: %llu already shutdown,"
 			" skipping\n", se_cmd->tag);
 		spin_unlock(&se_cmd->t_state_lock);
@@ -247,7 +247,7 @@ static void core_tmr_drain_tmr_list(
 			spin_unlock(&sess->sess_cmd_lock);
 			continue;
 		}
-		if (sess->sess_tearing_down || cmd->cmd_wait_set) {
+		if (sess->sess_tearing_down) {
 			spin_unlock(&cmd->t_state_lock);
 			spin_unlock(&sess->sess_cmd_lock);
 			continue;
