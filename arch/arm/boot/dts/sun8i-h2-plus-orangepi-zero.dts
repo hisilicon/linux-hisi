@@ -1,5 +1,8 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright (C) 2016 Icenowy Zheng <icenowy@aosc.xyz>
+ *
+ * Based on sun8i-h3-orangepi-one.dts, which is:
+ *   Copyright (C) 2016 Hans de Goede <hdegoede@redhat.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -41,16 +44,21 @@
  */
 
 /dts-v1/;
-#include "sun5i-a10s.dtsi"
+#include "sun8i-h3.dtsi"
 #include "sunxi-common-regulators.dtsi"
+
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/pinctrl/sun4i-a10.h>
 
 / {
-	model = "MK802-A10s";
-	compatible = "allwinner,a10s-mk802", "allwinner,sun5i-a10s";
+	model = "Xunlong Orange Pi Zero";
+	compatible = "xunlong,orangepi-zero", "allwinner,sun8i-h2-plus";
 
 	aliases {
 		serial0 = &uart0;
+		/* ethernet0 is the H3 emac, defined in sun8i-h3.dtsi */
+		ethernet1 = &xr819;
 	};
 
 	chosen {
@@ -59,40 +67,45 @@
 
 	leds {
 		compatible = "gpio-leds";
-		pinctrl-names = "default";
-		pinctrl-0 = <&led_pins_mk802>;
 
-		red {
-			label = "mk802:red:usr";
-			gpios = <&pio 1 2 GPIO_ACTIVE_HIGH>; /* PB2 */
+		pwr_led {
+			label = "orangepi:green:pwr";
+			gpios = <&r_pio 0 10 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+
+		status_led {
+			label = "orangepi:red:status";
+			gpios = <&pio 0 17 GPIO_ACTIVE_HIGH>;
 		};
 	};
-};
 
-&ehci0 {
-	status = "okay";
-};
-
-&i2c0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c0_pins_a>;
-	status = "okay";
-
-	axp152: pmic@30 {
-		compatible = "x-powers,axp152";
-		reg = <0x30>;
-		interrupts = <0>;
-		interrupt-controller;
-		#interrupt-cells = <1>;
+	reg_vcc_wifi: reg_vcc_wifi {
+		compatible = "regulator-fixed";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-name = "vcc-wifi";
+		enable-active-high;
+		gpio = <&pio 0 20 GPIO_ACTIVE_HIGH>;
 	};
+
+	wifi_pwrseq: wifi_pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&r_pio 0 7 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <200>;
+	};
+};
+
+&ehci1 {
+	status = "okay";
 };
 
 &mmc0 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&mmc0_pins_a>, <&mmc0_cd_pin_mk802>;
+	pinctrl-0 = <&mmc0_pins_a>;
 	vmmc-supply = <&reg_vcc3v3>;
 	bus-width = <4>;
-	cd-gpios = <&pio 6 1 GPIO_ACTIVE_HIGH>; /* PG1 */
+	cd-gpios = <&pio 5 6 GPIO_ACTIVE_HIGH>; /* PF6 */
 	cd-inverted;
 	status = "okay";
 };
@@ -100,41 +113,26 @@
 &mmc1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&mmc1_pins_a>;
-	vmmc-supply = <&reg_vcc3v3>;
+	vmmc-supply = <&reg_vcc_wifi>;
+	mmc-pwrseq = <&wifi_pwrseq>;
 	bus-width = <4>;
 	non-removable;
 	status = "okay";
-};
 
-&ohci0 {
-	status = "okay";
-};
-
-&otg_sram {
-	status = "okay";
-};
-
-&pio {
-	led_pins_mk802: led_pins@0 {
-		pins = "PB2";
-		function = "gpio_out";
-	};
-
-	mmc0_cd_pin_mk802: mmc0_cd_pin@0 {
-		pins = "PG1";
-		function = "gpio_in";
-		bias-pull-up;
-	};
-
-	usb1_vbus_pin_mk802: usb1_vbus_pin@0 {
-		pins = "PB10";
-		function = "gpio_out";
+	/*
+	 * Explicitly define the sdio device, so that we can add an ethernet
+	 * alias for it (which e.g. makes u-boot set a mac-address).
+	 */
+	xr819: sdio_wifi@1 {
+		reg = <1>;
 	};
 };
 
-&reg_usb1_vbus {
-	pinctrl-0 = <&usb1_vbus_pin_mk802>;
-	gpio = <&pio 1 10 GPIO_ACTIVE_HIGH>; /* PB10 */
+&mmc1_pins_a {
+	bias-pull-up;
+};
+
+&ohci1 {
 	status = "okay";
 };
 
@@ -144,12 +142,19 @@
 	status = "okay";
 };
 
-&usb_otg {
-	dr_mode = "peripheral";
-	status = "okay";
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pins>;
+	status = "disabled";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins>;
+	status = "disabled";
 };
 
 &usbphy {
-	usb1_vbus-supply = <&reg_usb1_vbus>;
+	/* USB VBUS is always on */
 	status = "okay";
 };
