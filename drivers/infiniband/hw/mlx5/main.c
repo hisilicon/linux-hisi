@@ -1687,7 +1687,7 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 	switch (ib_spec->type & ~IB_FLOW_SPEC_INNER) {
 	case IB_FLOW_SPEC_ETH:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->eth.mask, LAST_ETH_FIELD))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 
 		ether_addr_copy(MLX5_ADDR_OF(fte_match_set_lyr_2_4, headers_c,
 					     dmac_47_16),
@@ -1735,7 +1735,7 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 		break;
 	case IB_FLOW_SPEC_IPV4:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->ipv4.mask, LAST_IPV4_FIELD))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 			 ethertype, 0xffff);
@@ -1767,7 +1767,7 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 		break;
 	case IB_FLOW_SPEC_IPV6:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->ipv6.mask, LAST_IPV6_FIELD))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c,
 			 ethertype, 0xffff);
@@ -1808,7 +1808,7 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 	case IB_FLOW_SPEC_TCP:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->tcp_udp.mask,
 					 LAST_TCP_UDP_FIELD))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_protocol,
 			 0xff);
@@ -1828,7 +1828,7 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 	case IB_FLOW_SPEC_UDP:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->tcp_udp.mask,
 					 LAST_TCP_UDP_FIELD))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 
 		MLX5_SET(fte_match_set_lyr_2_4, headers_c, ip_protocol,
 			 0xff);
@@ -1848,7 +1848,7 @@ static int parse_flow_attr(u32 *match_c, u32 *match_v,
 	case IB_FLOW_SPEC_VXLAN_TUNNEL:
 		if (FIELDS_NOT_SUPPORTED(ib_spec->tunnel.mask,
 					 LAST_TUNNEL_FIELD))
-			return -ENOTSUPP;
+			return -EOPNOTSUPP;
 
 		MLX5_SET(fte_match_set_misc, misc_params_c, vxlan_vni,
 			 ntohl(ib_spec->tunnel.mask.tunnel_id));
