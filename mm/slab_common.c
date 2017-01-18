@@ -34,7 +34,7 @@ struct kmem_cache *kmem_cache;
  * Set of flags that will prevent slab merging
  */
 #define SLAB_NEVER_MERGE (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER | \
-		SLAB_TRACE | SLAB_DESTROY_BY_RCU | SLAB_NOLEAKTRACE | \
+		SLAB_TRACE | SLAB_TYPESAFE_BY_RCU | SLAB_NOLEAKTRACE | \
 		SLAB_FAILSLAB | SLAB_KASAN)
 
 #define SLAB_MERGE_SAME (SLAB_RECLAIM_ACCOUNT | SLAB_CACHE_DMA | \
@@ -464,7 +464,7 @@ static int shutdown_cache(struct kmem_cache *s,
 	if (__kmem_cache_shutdown(s) != 0)
 		return -EBUSY;
 
-	if (s->flags & SLAB_DESTROY_BY_RCU)
+	if (s->flags & SLAB_TYPESAFE_BY_RCU)
 		*need_rcu_barrier = true;
 
 	list_move(&s->list, release);
