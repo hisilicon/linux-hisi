@@ -3241,6 +3241,7 @@ EXPORT_SYMBOL(pci_request_regions_exclusive);
 #ifdef PCI_IOBASE
 struct io_range {
 	struct list_head list;
+	struct fwnode_handle *node;
 	phys_addr_t start;
 	resource_size_t size;
 };
@@ -3253,7 +3254,8 @@ static DEFINE_SPINLOCK(io_range_lock);
  * Record the PCI IO range (expressed as CPU physical address + size).
  * Return a negative value if an error has occured, zero otherwise
  */
-int __weak pci_register_io_range(phys_addr_t addr, resource_size_t size)
+int __weak pci_register_io_range(struct fwnode_handle *node, phys_addr_t addr,
+				 resource_size_t size, unsigned long *port)
 {
 	int err = 0;
 
@@ -3261,10 +3263,31 @@ int __weak pci_register_io_range(phys_addr_t addr, resource_size_t size)
 	struct io_range *range;
 	resource_size_t allocated_size = 0;
 
+	/*
+	 * As indirect-IO which support multiple bus instances is introduced,
+	 * the input 'addr' is probably not page-aligned. If the PCI I/O
+	 * ranges are registered after indirect-IO, there is risk that the
+	 * start logical PIO assigned to PCI I/O is not page-aligned.
+	 * This will cause some I/O subranges are not remapped or overlapped
+	 * in pci_remap_iospace() handling.
+	 */
+	WARN_ON(addr != IO_RANGE_IOEXT && !(addr & PAGE_MASK));
+	/*
+	 * MMIO will call ioremap, it is better to align size with PAGE_SIZE,
+	 * then the return linux virtual PIO is page-aligned.
+	 */
+	if (size & PAGE_MASK)
+		size = PAGE_ALIGN(size);
+
 	/* check if the range hasn't been previously recorded */
 	spin_lock(&io_range_lock);
 	list_for_each_entry(range, &io_range_list, list) {
-		if (addr >= range->start && addr + size <= range->start + size) {
+		if (node == range->node)
+			goto end_register;
+
+		if (addr != IO_RANGE_IOEXT &&
+		    addr >= range->start &&
+		    addr + size <= range->start + size) {
 			/* range already registered, bail out */
 			goto end_register;
 		}
@@ -3290,6 +3313,7 @@ int __weak pci_register_io_range(phys_addr_t addr, resource_size_t size)
 		goto end_register;
 	}
 
+	range->node = node;
 	range->start = addr;
 	range->size = size;
 
@@ -3297,6 +3321,14 @@ int __weak pci_register_io_range(phys_addr_t addr, resource_size_t size)
 
 end_register:
 	spin_unlock(&io_range_lock);
+
+	*port = allocated_size;
+#else
+	/*
+	 * powerpc and microblaze have their own registration,
+	 * just look up the value here
+	 */
+	*port = pci_address_to_pio(addr);
 #endif
 
 	return err;
@@ -3315,7 +3347,9 @@ phys_addr_t pci_pio_to_address(unsigned long pio)
 
 	spin_lock(&io_range_lock);
 	list_for_each_entry(range, &io_range_list, list) {
-		if (pio >= allocated_size && pio < allocated_size + range->size) {
+		if (range->start != IO_RANGE_IOEXT &&
+			pio >= allocated_size &&
+			pio < allocated_size + range->size) {
 			address = range->start + pio - allocated_size;
 			break;
 		}
@@ -3336,7 +3370,9 @@ unsigned long __weak pci_address_to_pio(phys_addr_t address)
 
 	spin_lock(&io_range_lock);
 	list_for_each_entry(res, &io_range_list, list) {
-		if (address >= res->start && address < res->start + res->size) {
+		if (res->start != IO_RANGE_IOEXT &&
+			address >= res->start &&
+			address < res->start + res->size) {
 			addr = address - res->start + offset;
 			break;
 		}
