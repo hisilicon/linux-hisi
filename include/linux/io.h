@@ -24,6 +24,7 @@
 #include <linux/err.h>
 #include <asm/io.h>
 #include <asm/page.h>
+#include <linux/extio.h>
 
 struct device;
 struct resource;

@@ -59,6 +59,14 @@ config ARCH_USE_CMPXCHG_LOCKREF
 config ARCH_HAS_FAST_MULTIPLIER
 	bool
 
+config INDIRECT_PIO
+	bool "access peripherals with legacy I/O port"
+	depends on PCI
+	help
+	  Support special accessors for ISA I/O devices. This is needed for
+	  SoCs that have not I/O space and do not support standard MMIO
+	  read/write for the ISA range.
+
 config CRC_CCITT
 	tristate "CRC-CCITT functions"
 	help
