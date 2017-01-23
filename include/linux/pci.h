@@ -34,6 +34,9 @@
 
 #include <linux/pci_ids.h>
 
+/* the macro below flags an invalid cpu address
+ * and is used by IO special hosts              */
+#define IO_RANGE_IOEXT (resource_size_t)(-1ull)
 /*
  * The PCI interface treats multi-function devices as independent
  * devices.  The slot/function address of each device is encoded
@@ -1197,8 +1200,8 @@ int __must_check pci_bus_alloc_resource(struct pci_bus *bus,
 						  resource_size_t),
 			void *alignf_data);
 
-
-int pci_register_io_range(phys_addr_t addr, resource_size_t size);
+int pci_register_io_range(struct fwnode_handle *node, phys_addr_t addr,
+			  resource_size_t size, unsigned long *port);
 unsigned long pci_address_to_pio(phys_addr_t addr);
 phys_addr_t pci_pio_to_address(unsigned long pio);
 int pci_remap_iospace(const struct resource *res, phys_addr_t phys_addr);
