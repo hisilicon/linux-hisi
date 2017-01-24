@@ -59,6 +59,7 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
 {
 	struct resource resource;
 	struct device_node *np = ofdev->dev.of_node;
+	unsigned long restype;
 	u32 clk, spd, prop;
 	int ret;
 
@@ -89,9 +90,46 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
 		goto out;
 	}
 
+	port->flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT;
+
+	restype = resource.flags & IORESOURCE_TYPE_BITS;
+	dev_info(&ofdev->dev, "type = 0x%lx range = %pR\n", restype,
+			&resource);
+	if (restype == IORESOURCE_IO) {
+		port->iotype = UPIO_PORT;
+		port->iobase = resource.start;
+	} else if (restype == IORESOURCE_MEM) {
+		port->mapbase = resource.start;
+		port->mapsize = resource_size(&resource);
+		port->iotype = UPIO_MEM;
+		if (!of_property_read_u32(np, "reg-io-width", &prop)) {
+			switch (prop) {
+			case 1:
+				port->iotype = UPIO_MEM;
+				break;
+			case 2:
+				port->iotype = UPIO_MEM16;
+				break;
+			case 4:
+				port->iotype = of_device_is_big_endian(np) ?
+					       UPIO_MEM32BE : UPIO_MEM32;
+				break;
+			default:
+				dev_warn(&ofdev->dev, "unsupported reg-io-width (%d)\n",
+					 prop);
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+		port->flags |= (UPF_IOREMAP & UPF_FIXED_TYPE);
+	} else {
+		dev_err(&ofdev->dev, "resource(%lu) is not valid resource!",
+				restype);
+		ret = -EINVAL;
+		goto out;
+	}
+
 	spin_lock_init(&port->lock);
-	port->mapbase = resource.start;
-	port->mapsize = resource_size(&resource);
 
 	/* Check for shifted address mapping */
 	if (of_property_read_u32(np, "reg-offset", &prop) == 0)
@@ -111,31 +149,8 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
 		port->line = ret;
 
 	port->irq = irq_of_parse_and_map(np, 0);
-	port->iotype = UPIO_MEM;
-	if (of_property_read_u32(np, "reg-io-width", &prop) == 0) {
-		switch (prop) {
-		case 1:
-			port->iotype = UPIO_MEM;
-			break;
-		case 2:
-			port->iotype = UPIO_MEM16;
-			break;
-		case 4:
-			port->iotype = of_device_is_big_endian(np) ?
-				       UPIO_MEM32BE : UPIO_MEM32;
-			break;
-		default:
-			dev_warn(&ofdev->dev, "unsupported reg-io-width (%d)\n",
-				 prop);
-			ret = -EINVAL;
-			goto out;
-		}
-	}
-
 	port->type = type;
 	port->uartclk = clk;
-	port->flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_IOREMAP
-		| UPF_FIXED_PORT | UPF_FIXED_TYPE;
 
 	if (of_find_property(np, "no-loopback-test", NULL))
 		port->flags |= UPF_SKIP_TEST;
@@ -197,6 +212,7 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 	{
 		u32 tx_threshold;
 		struct uart_8250_port port8250;
+
 		memset(&port8250, 0, sizeof(port8250));
 		port8250.port = port;
 
@@ -223,8 +239,10 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 		ret = -ENODEV;
 		break;
 	}
-	if (ret < 0)
+	if (ret < 0) {
+		dev_err(&ofdev->dev, "register 8250 port FAIL! ret=%d\n", -ret);
 		goto out;
+	}
 
 	info->type = port_type;
 	info->line = ret;
@@ -242,6 +260,7 @@ out:
 static int of_platform_serial_remove(struct platform_device *ofdev)
 {
 	struct of_serial_info *info = platform_get_drvdata(ofdev);
+
 	switch (info->type) {
 	case PORT_8250 ... PORT_MAX_8250:
 		serial8250_unregister_port(info->line);

@@ -45,6 +45,10 @@
 	status = "ok";
 };
 
+&uart0 {
+        status = "ok";
+};
+
 &ipmi0 {
 	status = "ok";
 };
