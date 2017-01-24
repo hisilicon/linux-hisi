@@ -484,6 +484,21 @@ config CAVIUM_ERRATUM_27456
 
 	  If unsure, say Y.
 
+config HISILICON_ERRATUM_161010801
+	bool "HiSilicon erratum 161010801"
+	default y
+	help
+	  Enable workaround for erratum 161010801.
+
+	  This implements a gicv3-its errata workaround for HiSilicon
+	  platforms Hip05/Hip07. These platforms cannot support the MSI
+	  interrupt remapping and MSI transaction has to be bypassed by SMMU.
+
+	  The fix is to avoid calling the remapping hook into the SMMU
+	  driver from the its_irq_compose_msi_msg().
+
+	  If unsure, say Y.
+
 endmenu
 
 

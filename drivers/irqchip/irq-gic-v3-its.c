@@ -45,6 +45,7 @@
 #define ITS_FLAGS_CMDQ_NEEDS_FLUSHING		(1ULL << 0)
 #define ITS_FLAGS_WORKAROUND_CAVIUM_22375	(1ULL << 1)
 #define ITS_FLAGS_WORKAROUND_CAVIUM_23144	(1ULL << 2)
+#define ITS_FLAGS_WORKAROUND_HISILICON_161010801	(1ULL << 3)
 
 #define RDIST_FLAGS_PROPBASE_NEEDS_FLUSHING	(1 << 0)
 
@@ -660,7 +661,8 @@ static void its_irq_compose_msi_msg(struct irq_data *d, struct msi_msg *msg)
 	msg->address_hi		= upper_32_bits(addr);
 	msg->data		= its_get_event_id(d);
 
-	iommu_dma_map_msi_msg(d->irq, msg);
+	if (!(its->flags & ITS_FLAGS_WORKAROUND_HISILICON_161010801))
+		iommu_dma_map_msi_msg(d->irq, msg);
 }
 
 static struct irq_chip its_irq_chip = {
@@ -1597,6 +1599,13 @@ static void __maybe_unused its_enable_quirk_cavium_23144(void *data)
 	its->flags |= ITS_FLAGS_WORKAROUND_CAVIUM_23144;
 }
 
+static void __maybe_unused its_enable_quirk_hisilicon_161010801(void *data)
+{
+	struct its_node *its = data;
+
+	its->flags |= ITS_FLAGS_WORKAROUND_HISILICON_161010801;
+}
+
 static const struct gic_quirk its_quirks[] = {
 #ifdef CONFIG_CAVIUM_ERRATUM_22375
 	{
@@ -1614,15 +1623,54 @@ static const struct gic_quirk its_quirks[] = {
 		.init	= its_enable_quirk_cavium_23144,
 	},
 #endif
+#ifdef CONFIG_HISILICON_ERRATUM_161010801
+	{
+		.desc	 = "ITS: HISILICON erratum 161010801",
+		.iidr	 = 0xffffffff,	/*invalid, use erratum instead*/
+		.mask	 = 0xffffffff,
+		.erratum = "hisilicon,erratum-161010801",
+		.init	 = its_enable_quirk_hisilicon_161010801,
+	},
+#endif
 	{
 	}
 };
+
+const struct gic_quirk  *erratum_workarounds[ARRAY_SIZE(its_quirks)] = {};
+
+static void its_enable_erratums(struct its_node *its)
+{
+	int i = 0;
+	const struct gic_quirk  *workarounds;
+
+	while ((workarounds = erratum_workarounds[i])) {
+		workarounds->init(its);
+		pr_info("GIC: enabling workaround for %s\n", workarounds->desc);
+		erratum_workarounds[i++] = NULL;
+	}
+
+}
 
 static void its_enable_quirks(struct its_node *its)
 {
 	u32 iidr = readl_relaxed(its->base + GITS_IIDR);
 
 	gic_enable_quirks(iidr, its_quirks, its);
+
+	its_enable_erratums(its);
+}
+
+static void of_its_enable_erratum(struct device_node *np)
+{
+	const struct gic_quirk *quirks = its_quirks;
+	int i = 0;
+
+	for (; quirks->desc; quirks++) {
+		const char *erratum = quirks->erratum;
+
+		if ((erratum) && (of_property_read_bool(np, erratum)))
+			erratum_workarounds[i++] = quirks;
+	}
 }
 
 static int its_init_domain(struct fwnode_handle *handle, struct its_node *its)
@@ -1801,6 +1849,8 @@ static int __init its_of_probe(struct device_node *node)
 			pr_warn("%s: no regs?\n", np->full_name);
 			continue;
 		}
+
+		of_its_enable_erratum(np);
 
 		its_probe_one(&res, &np->fwnode, of_node_to_nid(np));
 	}

@@ -26,6 +26,7 @@ struct gic_quirk {
 	void (*init)(void *data);
 	u32 iidr;
 	u32 mask;
+	const char *erratum;
 };
 
 int gic_configure_irq(unsigned int irq, unsigned int type,
