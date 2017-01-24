@@ -22,6 +22,14 @@
 		method = "smc";
 	};
 
+        aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8,0x2f8";
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -328,6 +336,14 @@
 				compatible = "ipmi-bt";
 				device_type = "ipmi";
 				reg = <0x01 0xe4 0x04>;
+				status = "disabled";
+			};
+
+			uart0: lpc-uart@2f8 {
+				/*compatible = "hisilicon,lpc-uart";*/
+				compatible = "hisilicon,hip06-lpc-uart", "ns16550a";
+				clock-frequency = <1843200>;
+				reg = <0x01 0x2f8 0x08>;
 				status = "disabled";
 			};
 		};
