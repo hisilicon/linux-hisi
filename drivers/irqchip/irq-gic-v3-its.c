@@ -1859,6 +1859,66 @@ static int __init its_of_probe(struct device_node *node)
 
 #ifdef CONFIG_ACPI
 
+struct acpi_madt_its_quirks {
+	char oem_id[ACPI_OEM_ID_SIZE+1];
+	char oem_table_id[ACPI_OEM_TABLE_ID_SIZE+1];
+	u32  oem_revision;
+	u32  its_id;
+	const char *erratum;
+};
+
+/*Upadate as per the board OEM ID and TABLE ID*/
+struct acpi_madt_its_quirks acpi_its_quirks[] __initdata = {
+
+};
+
+static void acpi_its_enable_erratum(const char  *erratum)
+{
+	const struct gic_quirk *quirks = its_quirks;
+	int i = 0;
+
+	for (; quirks->desc; quirks++) {
+		if ((quirks->erratum) && (!strcmp(quirks->erratum, erratum)))
+			erratum_workarounds[i++] = quirks;
+	}
+}
+
+static void __init acpi_its_oem_check(char *oem_id, char *oem_table_id,
+				u32 oem_revision)
+{
+	struct acpi_madt_its_quirks *quirks = acpi_its_quirks;
+
+	for (; quirks->erratum; quirks++) {
+		if (!memcmp(quirks->oem_id, oem_id, ACPI_OEM_ID_SIZE) &&
+		    !memcmp(quirks->oem_table_id, oem_table_id,
+		    ACPI_OEM_TABLE_ID_SIZE) &&
+		    quirks->oem_revision == oem_revision) {
+			acpi_its_enable_erratum(quirks->erratum);
+		}
+	}
+}
+
+static int __init acpi_parse_madt(struct acpi_table_header *madt_table)
+{
+	struct acpi_table_madt *table;
+
+	table = (struct acpi_table_madt *)madt_table;
+	acpi_its_oem_check(table->header.oem_id,
+		table->header.oem_table_id, table->header.oem_revision);
+
+	return 0;
+}
+
+void __init its_acpi_quirks_enable(u32  its_id)
+{
+	struct acpi_madt_its_quirks *quirks = acpi_its_quirks;
+
+	for (; quirks->erratum; quirks++) {
+		if (quirks->its_id == its_id)
+			acpi_table_parse(ACPI_SIG_MADT, acpi_parse_madt);
+	}
+}
+
 #define ACPI_GICV3_ITS_MEM_SIZE (SZ_128K)
 
 static int __init gic_acpi_parse_madt_its(struct acpi_subtable_header *header,
@@ -1888,6 +1948,8 @@ static int __init gic_acpi_parse_madt_its(struct acpi_subtable_header *header,
 		       &res.start, its_entry->translation_id);
 		goto dom_err;
 	}
+
+	its_acpi_quirks_enable(its_entry->translation_id);
 
 	err = its_probe_one(&res, dom_handle, NUMA_NO_NODE);
 	if (!err)
