@@ -1869,7 +1869,10 @@ struct acpi_madt_its_quirks {
 
 /*Upadate as per the board OEM ID and TABLE ID*/
 struct acpi_madt_its_quirks acpi_its_quirks[] __initdata = {
-
+#ifdef CONFIG_HISILICON_ERRATUM_161010801
+	{"HISI  ", "HIP06   ", 0, 0, "hisilicon,erratum-161010801"},
+	{"HISI  ", "HIP07   ", 0, 0, "hisilicon,erratum-161010801"},
+#endif
 };
 
 static void acpi_its_enable_erratum(const char  *erratum)
