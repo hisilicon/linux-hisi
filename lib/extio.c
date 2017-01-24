@@ -75,6 +75,234 @@ unsigned long extio_translate(struct fwnode_handle *node,
 	return port_id;
 }
 
+static inline bool acpi_extio_supported_resource(struct acpi_resource *res)
+{
+	switch (res->type) {
+	case ACPI_RESOURCE_TYPE_ADDRESS16:
+	case ACPI_RESOURCE_TYPE_ADDRESS32:
+	case ACPI_RESOURCE_TYPE_ADDRESS64:
+		return true;
+	}
+	return false;
+}
+
+static acpi_status acpi_count_extiores(struct acpi_resource *res,
+					   void *data)
+{
+	int *res_cnt = data;
+
+	if (acpi_extio_supported_resource(res) &&
+		!acpi_dev_filter_resource_type(res, IORESOURCE_IO))
+		(*res_cnt)++;
+
+	return AE_OK;
+}
+
+static acpi_status acpi_read_one_extiores(struct acpi_resource *res,
+		void *data)
+{
+	struct acpi_resource **resource = data;
+
+	if (acpi_extio_supported_resource(res) &&
+		!acpi_dev_filter_resource_type(res, IORESOURCE_IO)) {
+		memcpy((*resource), res, sizeof(struct acpi_resource));
+		(*resource)->length = sizeof(struct acpi_resource);
+		(*resource)->type = res->type;
+		(*resource)++;
+	}
+
+	return AE_OK;
+}
+
+static acpi_status
+acpi_build_extiores_template(struct acpi_device *adev,
+			struct acpi_buffer *buffer)
+{
+	acpi_handle handle = adev->handle;
+	struct acpi_resource *resource;
+	acpi_status status;
+	int res_cnt = 0;
+
+	status = acpi_walk_resources(handle, METHOD_NAME__PRS,
+				     acpi_count_extiores, &res_cnt);
+	if (ACPI_FAILURE(status) || !res_cnt) {
+		dev_err(&adev->dev, "can't evaluate _CRS: %d\n", status);
+		return -EINVAL;
+	}
+
+	buffer->length = sizeof(struct acpi_resource) * (res_cnt + 1) + 1;
+	buffer->pointer = kzalloc(buffer->length - 1, GFP_KERNEL);
+	if (!buffer->pointer)
+		return -ENOMEM;
+
+	resource = (struct acpi_resource *)buffer->pointer;
+	status = acpi_walk_resources(handle, METHOD_NAME__PRS,
+				     acpi_read_one_extiores, &resource);
+	if (ACPI_FAILURE(status)) {
+		kfree(buffer->pointer);
+		dev_err(&adev->dev, "can't evaluate _PRS: %d\n", status);
+		return -EINVAL;
+	}
+
+	resource->type = ACPI_RESOURCE_TYPE_END_TAG;
+	resource->length = sizeof(struct acpi_resource);
+
+	return 0;
+}
+
+static int acpi_translate_extiores(struct acpi_device *adev,
+		struct acpi_device *host, struct acpi_buffer *buffer)
+{
+	int res_cnt = (buffer->length - 1) / sizeof(struct acpi_resource) - 1;
+	struct acpi_resource *resource = buffer->pointer;
+	struct acpi_resource_address64 addr;
+	unsigned long sys_port;
+	struct device *dev = &adev->dev;
+
+	/* only one I/O resource now */
+	if (res_cnt != 1) {
+		dev_err(dev, "encode %d resources whose type is(%d)!\n",
+			res_cnt, resource->type);
+		return -EINVAL;
+	}
+
+	if (ACPI_FAILURE(acpi_resource_to_address64(resource, &addr))) {
+		dev_err(dev, "convert acpi resource(%d) as addr64 FAIL!\n",
+			resource->type);
+		return -EFAULT;
+	}
+
+	/* For indirect-IO, addr length must be fixed. (>0, 0, 0) */
+	if (!addr.address.address_length || addr.min_address_fixed ||
+		addr.max_address_fixed) {
+		dev_warn(dev, "variable I/O resource is invalid!\n");
+		return -EINVAL;
+	}
+
+	sys_port = extio_translate(&host->fwnode, addr.address.minimum);
+	if (sys_port == -1) {
+		dev_err(dev, "translate bus-addr(0x%llx) fail!\n",
+			addr.address.minimum);
+		return -EFAULT;
+	}
+
+	switch (resource->type) {
+	case ACPI_RESOURCE_TYPE_ADDRESS16:
+	{
+		struct acpi_resource_address16 *out_res;
+
+		out_res = &resource->data.address16;
+		out_res->address.minimum = sys_port;
+		out_res->address.maximum = sys_port +
+			addr.address.address_length - 1;
+
+		dev_info(dev, "_SRS 16IO: [0x%x - 0x%x]\n",
+			out_res->address.minimum,
+			out_res->address.maximum);
+
+		break;
+	}
+
+	case ACPI_RESOURCE_TYPE_ADDRESS32:
+	{
+		struct acpi_resource_address32 *out_res;
+
+		out_res = &resource->data.address32;
+		out_res->address.minimum = sys_port;
+		out_res->address.maximum = sys_port +
+			addr.address.address_length - 1;
+
+		dev_info(dev, "_SRS 32IO: [0x%x - 0x%x]\n",
+			out_res->address.minimum,
+			out_res->address.maximum);
+
+		break;
+	}
+
+	case ACPI_RESOURCE_TYPE_ADDRESS64:
+	{
+		struct acpi_resource_address64 *out_res;
+
+		out_res = &resource->data.address64;
+		out_res->address.minimum = sys_port;
+		out_res->address.maximum = sys_port +
+			addr.address.address_length - 1;
+
+		dev_info(dev, "_SRS 64IO: [0x%llx - 0x%llx]\n",
+			out_res->address.minimum,
+			out_res->address.maximum);
+
+		break;
+	}
+
+	default:
+		return -EINVAL;
+
+	}
+
+	return 0;
+}
+
+/*
+ * update/set the current I/O resource of the designated device node.
+ * after this calling, the enumeration can be started as the I/O resource
+ * had been translated to logicial I/O from bus-local I/O.
+ *
+ * @adev: the device node to be updated the I/O resource;
+ * @host: the device node where 'adev' is attached, which can be not
+ *	the parent of 'adev';
+ *
+ * return 0 when successful, negative is for failure.
+ */
+int acpi_set_extio_resource(struct acpi_device *adev,
+		struct acpi_device *host)
+{
+	struct device *dev = &adev->dev;
+	struct acpi_buffer buffer;
+	acpi_status status;
+	int ret;
+
+	if (!host)
+		return -EINVAL;
+
+	/* check the device state */
+	if (!adev->status.present) {
+		dev_info(dev, "ACPI: device is not present!\n");
+		return 0;
+	}
+	/* whether the child had been enumerated? */
+	if (acpi_device_enumerated(adev)) {
+		dev_info(dev, "ACPI: had been enumerated!\n");
+		return 0;
+	}
+
+	/* read the _PRS and convert as acpi_buffer */
+	status = acpi_build_extiores_template(adev, &buffer);
+	if (ACPI_FAILURE(status)) {
+		dev_warn(dev, "Failure evaluating %s\n",
+				METHOD_NAME__PRS);
+		return -ENODEV;
+	}
+
+	/* translate the I/O resources */
+	ret = acpi_translate_extiores(adev, host, &buffer);
+	if (ret) {
+		kfree(buffer.pointer);
+		dev_err(dev, "Translate I/O range FAIL!\n");
+		return ret;
+	}
+
+	/* set current resource... */
+	status = acpi_set_current_resources(adev->handle, &buffer);
+	kfree(buffer.pointer);
+	if (ACPI_FAILURE(status)) {
+		dev_err(dev, "Error evaluating _SRS (0x%x)\n", status);
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
 #ifdef PCI_IOBASE
 
 #define BUILD_EXTIO(bw, type)						\
