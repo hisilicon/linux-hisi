@@ -75,6 +75,12 @@ These nodes must have the following properties:
 - reg: Specifies the base physical address and size of the ITS
   registers.
 
+Optional
+- hisilicon,erratum-161010801 : A boolean property. Indicates the presence of
+  erratum 161010801, which says that these platforms doesn't support  SMMU
+  mapping for MSI transactions and those transactions has to be bypassed
+  by SMMU.
+
 The main GIC node must contain the appropriate #address-cells,
 #size-cells and ranges properties for the reg property of all ITS
 nodes.
