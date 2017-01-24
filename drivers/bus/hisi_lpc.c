@@ -583,6 +583,32 @@ static int hisilpc_bus_platform_notify(struct notifier_block *nb,
 	/* register the linux virtual IO range node to list. */
 	register_extio(io_node);
 
+	/*
+	 * For ACPI children, translate the bus-local I/O range to logical
+	 * I/O range and set it as the current resource before the children
+	 * are enumerated.
+	 */
+	if (has_acpi_companion(dev)) {
+		struct acpi_device *root, *child;
+
+		root = to_acpi_device_node(dev->fwnode);
+		/* For hisilpc, only care about the sons of host. */
+		list_for_each_entry(child, &root->children, node) {
+			ret = acpi_set_extio_resource(child, root);
+			if (ret) {
+				dev_err(dev, "set resource failed..\n");
+				break;
+			}
+		}
+
+		if (ret) {
+			list_del(&io_node->list);
+			kfree(io_node);
+			dev_err(dev, "notify handling failed..\n");
+			return NOTIFY_DONE;
+		}
+	}
+
 	return NOTIFY_OK;
 }
 
