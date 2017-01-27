@@ -440,7 +440,7 @@ static SUNXI_CCU_M_WITH_GATE(ve_clk, "ve", "pll-ve",
 			     0x13c, 16, 3, BIT(31), CLK_SET_RATE_PARENT);
 
 static SUNXI_CCU_GATE(ac_dig_clk,	"ac-dig",	"pll-audio",
-		      0x140, BIT(31), 0);
+		      0x140, BIT(31), CLK_SET_RATE_PARENT);
 static SUNXI_CCU_GATE(ac_dig_4x_clk,	"ac-dig-4x",	"pll-audio-4x",
 		      0x140, BIT(30), 0);
 static SUNXI_CCU_GATE(avs_clk,		"avs",		"osc24M",
@@ -468,7 +468,7 @@ static SUNXI_CCU_M_WITH_MUX_TABLE_GATE(drc_clk, "drc",
 				       0x180, 0, 4, 24, 3, BIT(31), 0);
 
 static SUNXI_CCU_M_WITH_GATE(gpu_clk, "gpu", "pll-gpu",
-			     0x1a0, 0, 3, BIT(31), 0);
+			     0x1a0, 0, 3, BIT(31), CLK_SET_RATE_PARENT);
 
 static const char * const ats_parents[] = { "osc24M", "pll-periph" };
 static SUNXI_CCU_M_WITH_MUX_GATE(ats_clk, "ats", ats_parents,
