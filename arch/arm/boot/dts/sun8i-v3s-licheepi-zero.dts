@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Chen-Yu Tsai <wens@csie.org>
+ * Copyright (C) 2016 Icenowy Zheng <icenowy@aosc.xyz>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -40,14 +40,17 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/* The SinA31s development board has the SinA31s core board soldered on */
-#include "sun6i-a31s-sina31s-core.dtsi"
-
-#include <dt-bindings/input/input.h>
+/dts-v1/;
+#include "sun8i-v3s.dtsi"
+#include "sunxi-common-regulators.dtsi"
 
 / {
-	model = "Sinlinx SinA31s Development Board";
-	compatible = "sinlinx,sina31s-sdk", "allwinner,sun6i-a31s";
+	model = "Lichee Pi Zero";
+	compatible = "licheepi,licheepi-zero", "allwinner,sun8i-v3s";
+
+	aliases {
+		serial0 = &uart0;
+	};
 
 	chosen {
 		stdout-path = "serial0:115200n8";
@@ -55,109 +58,46 @@
 
 	leds {
 		compatible = "gpio-leds";
-		pinctrl-names = "default";
-		pinctrl-0 = <&led_pin_sina31s>;
 
-		status {
-			label = "sina31s:status:usr";
-			gpios = <&pio 7 13 GPIO_ACTIVE_HIGH>; /* PH13 */
+		blue_led {
+			label = "licheepi:blue:usr";
+			gpios = <&pio 6 1 GPIO_ACTIVE_LOW>; /* PG1 */
+		};
+
+		green_led {
+			label = "licheepi:green:usr";
+			gpios = <&pio 6 0 GPIO_ACTIVE_LOW>; /* PG0 */
+			default-state = "on";
+		};
+
+		red_led {
+			label = "licheepi:red:usr";
+			gpios = <&pio 6 2 GPIO_ACTIVE_LOW>; /* PG2 */
 		};
 	};
 };
 
-&codec {
-	allwinner,audio-routing =
-		"Line Out", "LINEOUT",
-		"MIC1", "Mic",
-		"Mic",	"MBIAS";
-	status = "okay";
-};
-
-&ehci0 {
-	/* USB 2.0 4 port hub IC */
-	status = "okay";
-};
-
-&ehci1 {
-	status = "okay";
-};
-
-&gmac {
-	pinctrl-names = "default";
-	pinctrl-0 = <&gmac_pins_mii_a>;
-	phy = <&phy1>;
-	phy-mode = "mii";
-	phy-supply = <&reg_dldo1>;
-	status = "okay";
-
-	phy1: ethernet-phy@1 {
-		reg = <1>;
-	};
-};
-
-&ir {
-	pinctrl-names = "default";
-	pinctrl-0 = <&ir_pins_a>;
-	status = "okay";
-};
-
-&lradc {
-	vref-supply = <&reg_aldo3>;
-	status = "okay";
-
-	button@158 {
-		label = "Volume Up";
-		linux,code = <KEY_VOLUMEUP>;
-		channel = <0>;
-		voltage = <158730>;
-	};
-
-	button@349 {
-		label = "Volume Down";
-		linux,code = <KEY_VOLUMEDOWN>;
-		channel = <0>;
-		voltage = <349206>;
-	};
-};
-
 &mmc0 {
+	pinctrl-0 = <&mmc0_pins_a>;
 	pinctrl-names = "default";
-	pinctrl-0 = <&mmc0_pins_a>, <&mmc0_cd_pin_sina31s>;
-	vmmc-supply = <&reg_dcdc1>;
+	broken-cd;
 	bus-width = <4>;
-	cd-gpios = <&pio 0 4 GPIO_ACTIVE_HIGH>; /* PA4 */
-	cd-inverted;
+	vmmc-supply = <&reg_vcc3v3>;
 	status = "okay";
 };
 
-&ohci1 {
+&uart0 {
+	pinctrl-0 = <&uart0_pins_a>;
+	pinctrl-names = "default";
 	status = "okay";
-};
-
-&pio {
-	led_pin_sina31s: led_pin@0 {
-		pins = "PH13";
-		function = "gpio_out";
-	};
-
-	mmc0_cd_pin_sina31s: mmc0_cd_pin@0 {
-		pins = "PA4";
-		function = "gpio_in";
-		bias-pull-up;
-	};
-};
-
-&reg_dldo1 {
-	regulator-min-microvolt = <3300000>;
-	regulator-max-microvolt = <3300000>;
-	regulator-name = "vcc-gmac-phy";
 };
 
 &usb_otg {
-	dr_mode = "peripheral";
+	dr_mode = "otg";
 	status = "okay";
 };
 
 &usbphy {
+	usb0_id_det-gpio = <&pio 5 6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
