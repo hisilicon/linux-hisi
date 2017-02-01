@@ -603,29 +603,6 @@ int LZ4_compress_HC(const char *src, char *dst, int srcSize,
 }
 EXPORT_SYMBOL(LZ4_compress_HC);
 
-/*-******************************
- *	For backwards compatibility
- ********************************/
-int lz4hc_compress(const unsigned char *src, size_t src_len,
-	unsigned char *dst, size_t *dst_len, void *wrkmem)
-{
-	*dst_len = LZ4_compress_HC(src, dst, (int)src_len,
-		(int)((size_t)dst_len), LZ4HC_DEFAULT_CLEVEL, wrkmem);
-
-	/*
-	 * Prior lz4hc_compress will return -1 in case of error
-	 * and 0 on success
-	 * while new LZ4_compress_HC
-	 * returns 0 in case of error
-	 * and the output length on success
-	 */
-	if (!dst_len)
-		return -1;
-	else
-		return 0;
-}
-EXPORT_SYMBOL(lz4hc_compress);
-
 /**************************************
  *	Streaming Functions
  **************************************/

@@ -173,14 +173,6 @@ static inline int LZ4_compressBound(size_t isize)
 }
 
 /*
- * For backward compatibility
- */
-static inline int lz4_compressbound(size_t isize)
-{
-	return LZ4_COMPRESSBOUND(isize);
-}
-
-/*
  * LZ4_compress_default()
  *	Compresses 'sourceSize' bytes from buffer 'source'
  *	into already allocated 'dest' buffer of size 'maxOutputSize'.
@@ -248,23 +240,6 @@ int LZ4_compress_fast(const char *source, char *dest, int inputSize,
  */
 int LZ4_compress_destSize(const char *source, char *dest, int *sourceSizePtr,
 	int targetDestSize, void *wrkmem);
-
-/*
- * lz4_compress()
- *	src    : source address of the original data
- *	src_len: size of the original data
- *	dst    : output buffer address of the compressed data
- *           This requires 'dst' of size LZ4_COMPRESSBOUND.
- *	dst_len: is the output size, which is returned after compress done
- *	workmem: address of the working memory.
- *           This requires 'workmem' of size LZ4_MEM_COMPRESS.
- *	return	: Success if return 0
- *            Error if return (< 0)
- *	note :	Destination buffer and workmem must be already allocated with
- *		the defined size.
- */
-int lz4_compress(const unsigned char *src, size_t src_len, unsigned char *dst,
-	size_t *dst_len, void *wrkmem);
 
 /*-************************************************************************
  *	Decompression Functions
@@ -340,37 +315,6 @@ int LZ4_decompress_safe(const char *source, char *dest, int compressedSize,
 int LZ4_decompress_safe_partial(const char *source, char *dest,
 	int compressedSize, int targetOutputSize, int maxDecompressedSize);
 
-
-/*
- * lz4_decompress_unknownoutputsize() :
- *	src     : source address of the compressed data
- *	src_len : is the input size, therefore the compressed size
- *	dest    : output buffer address of the decompressed data
- *	dest_len: is the max size of the destination buffer, which is
- *            returned with actual size of decompressed data after
- *            decompress done
- * return: Success if return 0
- *         Error if return (< 0)
- * note:   Destination buffer must be already allocated.
- */
-int lz4_decompress_unknownoutputsize(const unsigned char *src, size_t src_len,
-	unsigned char *dest, size_t *dest_len);
-
-/*
- * lz4_decompress() :
- *	src            : source address of the compressed data
- *	src_len        : is the input size,
- *                   which is returned after decompress done
- *	dest           : output buffer address of the decompressed data
- *	actual_dest_len: is the size of uncompressed data, supposing it's known
- *	return: Success if return 0
- *          Error if return (< 0)
- *	note  : Destination buffer must be already allocated.
- *          slightly faster than lz4_decompress_unknownoutputsize()
- */
-int lz4_decompress(const unsigned char *src, size_t *src_len,
-	unsigned char *dest, size_t actual_dest_len);
-
 /*-************************************************************************
  *	LZ4 HC Compression
  **************************************************************************/
@@ -397,23 +341,6 @@ int lz4_decompress(const unsigned char *src, size_t *src_len,
  */
 int LZ4_compress_HC(const char *src, char *dst, int srcSize, int dstCapacity,
 	int compressionLevel, void *wrkmem);
-
-/*
- * lz4hc_compress()
- *	src    : source address of the original data
- *	src_len: size of the original data
- *	dst    : output buffer address of the compressed data
- *           This requires 'dst' of size LZ4_COMPRESSBOUND.
- *	dst_len: is the output size, which is returned after compress done
- *	workmem: address of the working memory.
- *           This requires 'workmem' of size LZ4HC_MEM_COMPRESS.
- * return	: Success if return 0
- *          Error if return (< 0)
- * note   : Destination buffer and workmem must be already allocated with
- *          the defined size.
- */
-int lz4hc_compress(const unsigned char *src, size_t src_len, unsigned char *dst,
-	size_t *dst_len, void *wrkmem);
 
 /*
  *	These functions compress data in successive blocks of any size,
