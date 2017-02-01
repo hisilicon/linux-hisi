@@ -606,6 +606,7 @@ struct se_session {
 	spinlock_t		sess_cmd_lock;
 	void			*sess_cmd_map;
 	struct percpu_ida	sess_tag_pool;
+	struct workqueue_struct *tmf_wq;
 };
 
 struct se_device;
