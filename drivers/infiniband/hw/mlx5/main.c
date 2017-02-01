@@ -64,10 +64,6 @@ MODULE_DESCRIPTION("Mellanox Connect-IB HCA IB driver");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRIVER_VERSION);
 
-static int deprecated_prof_sel = 2;
-module_param_named(prof_sel, deprecated_prof_sel, int, 0444);
-MODULE_PARM_DESC(prof_sel, "profile selector. Deprecated here. Moved to module mlx5_core");
-
 static char mlx5_version[] =
 	DRIVER_NAME ": Mellanox Connect-IB Infiniband driver v"
 	DRIVER_VERSION " (" DRIVER_RELDATE ")\n";
@@ -323,6 +319,27 @@ __be16 mlx5_get_roce_udp_sport(struct mlx5_ib_dev *dev, u8 port_num,
 		return 0;
 
 	return cpu_to_be16(MLX5_CAP_ROCE(dev->mdev, r_roce_min_src_udp_port));
+}
+
+int mlx5_get_roce_gid_type(struct mlx5_ib_dev *dev, u8 port_num,
+			   int index, enum ib_gid_type *gid_type)
+{
+	struct ib_gid_attr attr;
+	union ib_gid gid;
+	int ret;
+
+	ret = ib_get_cached_gid(&dev->ib_dev, port_num, index, &gid, &attr);
+	if (ret)
+		return ret;
+
+	if (!attr.ndev)
+		return -ENODEV;
+
+	dev_put(attr.ndev);
+
+	*gid_type = attr.gid_type;
+
+	return 0;
 }
 
 static int mlx5_use_mad_ifc(struct mlx5_ib_dev *dev)
@@ -2533,6 +2550,35 @@ static void mlx5_ib_event(struct mlx5_core_dev *dev, void *context,
 		ibdev->ib_active = false;
 }
 
+static int set_has_smi_cap(struct mlx5_ib_dev *dev)
+{
+	struct mlx5_hca_vport_context vport_ctx;
+	int err;
+	int port;
+
+	for (port = 1; port <= MLX5_CAP_GEN(dev->mdev, num_ports); port++) {
+		dev->mdev->port_caps[port - 1].has_smi = false;
+		if (MLX5_CAP_GEN(dev->mdev, port_type) ==
+		    MLX5_CAP_PORT_TYPE_IB) {
+			if (MLX5_CAP_GEN(dev->mdev, ib_virt)) {
+				err = mlx5_query_hca_vport_context(dev->mdev, 0,
+								   port, 0,
+								   &vport_ctx);
+				if (err) {
+					mlx5_ib_err(dev, "query_hca_vport_context for port=%d failed %d\n",
+						    port, err);
+					return err;
+				}
+				dev->mdev->port_caps[port - 1].has_smi =
+					vport_ctx.has_smi;
+			} else {
+				dev->mdev->port_caps[port - 1].has_smi = true;
+			}
+		}
+	}
+	return 0;
+}
+
 static void get_ext_port_caps(struct mlx5_ib_dev *dev)
 {
 	int port;
@@ -2555,6 +2601,10 @@ static int get_port_caps(struct mlx5_ib_dev *dev)
 
 	dprops = kmalloc(sizeof(*dprops), GFP_KERNEL);
 	if (!dprops)
+		goto out;
+
+	err = set_has_smi_cap(dev);
+	if (err)
 		goto out;
 
 	err = mlx5_ib_query_device(&dev->ib_dev, dprops, &uhw);
@@ -3313,9 +3363,11 @@ static void *mlx5_ib_add(struct mlx5_core_dev *mdev)
 	if (err)
 		goto err_rsrc;
 
-	err = mlx5_ib_alloc_q_counters(dev);
-	if (err)
-		goto err_odp;
+	if (MLX5_CAP_GEN(dev->mdev, max_qp_cnt)) {
+		err = mlx5_ib_alloc_q_counters(dev);
+		if (err)
+			goto err_odp;
+	}
 
 	dev->mdev->priv.uar = mlx5_get_uars_page(dev->mdev);
 	if (!dev->mdev->priv.uar)
@@ -3364,7 +3416,8 @@ err_uar_page:
 	mlx5_put_uars_page(dev->mdev, dev->mdev->priv.uar);
 
 err_q_cnt:
-	mlx5_ib_dealloc_q_counters(dev);
+	if (MLX5_CAP_GEN(dev->mdev, max_qp_cnt))
+		mlx5_ib_dealloc_q_counters(dev);
 
 err_odp:
 	mlx5_ib_odp_remove_one(dev);
@@ -3397,7 +3450,8 @@ static void mlx5_ib_remove(struct mlx5_core_dev *mdev, void *context)
 	mlx5_free_bfreg(dev->mdev, &dev->fp_bfreg);
 	mlx5_free_bfreg(dev->mdev, &dev->bfreg);
 	mlx5_put_uars_page(dev->mdev, mdev->priv.uar);
-	mlx5_ib_dealloc_q_counters(dev);
+	if (MLX5_CAP_GEN(dev->mdev, max_qp_cnt))
+		mlx5_ib_dealloc_q_counters(dev);
 	destroy_umrc_res(dev);
 	mlx5_ib_odp_remove_one(dev);
 	destroy_dev_resources(&dev->devr);
@@ -3420,9 +3474,6 @@ static struct mlx5_interface mlx5_ib_interface = {
 static int __init mlx5_ib_init(void)
 {
 	int err;
-
-	if (deprecated_prof_sel != 2)
-		pr_warn("prof_sel is deprecated for mlx5_ib, set it for mlx5_core\n");
 
 	err = mlx5_register_interface(&mlx5_ib_interface);
 
