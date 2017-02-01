@@ -207,6 +207,7 @@ enum ib_device_cap_flags {
 	IB_DEVICE_MEM_WINDOW_TYPE_2A		= (1 << 23),
 	IB_DEVICE_MEM_WINDOW_TYPE_2B		= (1 << 24),
 	IB_DEVICE_RC_IP_CSUM			= (1 << 25),
+	/* Deprecated. Please use IB_RAW_PACKET_CAP_IP_CSUM. */
 	IB_DEVICE_RAW_IP_CSUM			= (1 << 26),
 	/*
 	 * Devices should set IB_DEVICE_CROSS_CHANNEL if they
@@ -220,6 +221,7 @@ enum ib_device_cap_flags {
 	IB_DEVICE_ON_DEMAND_PAGING		= (1ULL << 31),
 	IB_DEVICE_SG_GAPS_REG			= (1ULL << 32),
 	IB_DEVICE_VIRTUAL_FUNCTION		= (1ULL << 33),
+	/* Deprecated. Please use IB_RAW_PACKET_CAP_SCATTER_FCS. */
 	IB_DEVICE_RAW_SCATTER_FCS		= (1ULL << 34),
 };
 
@@ -330,6 +332,7 @@ struct ib_device_attr {
 	uint64_t		hca_core_clock; /* in KHZ */
 	struct ib_rss_caps	rss_caps;
 	u32			max_wq_type_rq;
+	u32			raw_packet_caps; /* Use ib_raw_packet_caps enum */
 };
 
 enum ib_mtu {
@@ -1025,6 +1028,7 @@ enum ib_qp_create_flags {
 	IB_QP_CREATE_SIGNATURE_EN		= 1 << 6,
 	IB_QP_CREATE_USE_GFP_NOIO		= 1 << 7,
 	IB_QP_CREATE_SCATTER_FCS		= 1 << 8,
+	IB_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
 	/* reserve bits 26-31 for low level drivers' internal use */
 	IB_QP_CREATE_RESERVED_START		= 1 << 26,
 	IB_QP_CREATE_RESERVED_END		= 1 << 31,
@@ -1476,6 +1480,18 @@ struct ib_srq {
 	} ext;
 };
 
+enum ib_raw_packet_caps {
+	/* Strip cvlan from incoming packet and report it in the matching work
+	 * completion is supported.
+	 */
+	IB_RAW_PACKET_CAP_CVLAN_STRIPPING	= (1 << 0),
+	/* Scatter FCS field of an incoming packet to host memory is supported.
+	 */
+	IB_RAW_PACKET_CAP_SCATTER_FCS		= (1 << 1),
+	/* Checksum offloads are supported (for both send and receive). */
+	IB_RAW_PACKET_CAP_IP_CSUM		= (1 << 2),
+};
+
 enum ib_wq_type {
 	IB_WQT_RQ
 };
@@ -1499,6 +1515,11 @@ struct ib_wq {
 	atomic_t		usecnt;
 };
 
+enum ib_wq_flags {
+	IB_WQ_FLAGS_CVLAN_STRIPPING	= 1 << 0,
+	IB_WQ_FLAGS_SCATTER_FCS		= 1 << 1,
+};
+
 struct ib_wq_init_attr {
 	void		       *wq_context;
 	enum ib_wq_type	wq_type;
@@ -1506,16 +1527,20 @@ struct ib_wq_init_attr {
 	u32		max_sge;
 	struct	ib_cq	       *cq;
 	void		    (*event_handler)(struct ib_event *, void *);
+	u32		create_flags; /* Use enum ib_wq_flags */
 };
 
 enum ib_wq_attr_mask {
-	IB_WQ_STATE	= 1 << 0,
-	IB_WQ_CUR_STATE	= 1 << 1,
+	IB_WQ_STATE		= 1 << 0,
+	IB_WQ_CUR_STATE		= 1 << 1,
+	IB_WQ_FLAGS		= 1 << 2,
 };
 
 struct ib_wq_attr {
 	enum	ib_wq_state	wq_state;
 	enum	ib_wq_state	curr_wq_state;
+	u32			flags; /* Use enum ib_wq_flags */
+	u32			flags_mask; /* Use enum ib_wq_flags */
 };
 
 struct ib_rwq_ind_table {
