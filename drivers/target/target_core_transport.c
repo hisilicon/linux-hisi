@@ -248,7 +248,7 @@ EXPORT_SYMBOL(transport_init_session);
 int transport_alloc_session_tags(struct se_session *se_sess,
 			         unsigned int tag_num, unsigned int tag_size)
 {
-	int rc;
+	int rc = -ENOMEM;
 
 	se_sess->sess_cmd_map = kzalloc(tag_num * tag_size,
 					GFP_KERNEL | __GFP_NOWARN | __GFP_REPEAT);
@@ -256,20 +256,24 @@ int transport_alloc_session_tags(struct se_session *se_sess,
 		se_sess->sess_cmd_map = vzalloc(tag_num * tag_size);
 		if (!se_sess->sess_cmd_map) {
 			pr_err("Unable to allocate se_sess->sess_cmd_map\n");
-			return -ENOMEM;
+			goto out;
 		}
 	}
 
 	rc = percpu_ida_init(&se_sess->sess_tag_pool, tag_num);
 	if (rc < 0) {
-		pr_err("Unable to init se_sess->sess_tag_pool,"
-			" tag_num: %u\n", tag_num);
-		kvfree(se_sess->sess_cmd_map);
-		se_sess->sess_cmd_map = NULL;
-		return -ENOMEM;
+		pr_err("Unable to init se_sess->sess_tag_pool, tag_num: %u\n",
+		       tag_num);
+		goto free_cmd_map;
 	}
 
-	return 0;
+out:
+	return rc;
+
+free_cmd_map:
+	kvfree(se_sess->sess_cmd_map);
+	se_sess->sess_cmd_map = NULL;
+	goto out;
 }
 EXPORT_SYMBOL(transport_alloc_session_tags);
 
