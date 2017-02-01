@@ -783,7 +783,7 @@ static int mmc_sd_num_wr_blocks(struct mmc_card *card, u32 *written_blocks)
 	if (err)
 		return err;
 	if (!mmc_host_is_spi(card->host) && !(cmd.resp[0] & R1_APP_CMD))
-		return err;
+		return 0;
 
 	memset(&cmd, 0, sizeof(struct mmc_command));
 
