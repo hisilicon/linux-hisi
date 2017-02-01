@@ -79,9 +79,6 @@
 #ifndef GET_FPEXC_CTL
 # define GET_FPEXC_CTL(a, b)	(-EINVAL)
 #endif
-#ifndef GET_ENDIAN
-# define GET_ENDIAN(a, b)	(-EINVAL)
-#endif
 #ifndef SET_ENDIAN
 # define SET_ENDIAN(a, b)	(-EINVAL)
 #endif
@@ -2136,7 +2133,13 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 			return -EFAULT;
 		break;
 	case PR_GET_ENDIAN:
+#ifdef GET_ENDIAN
 		error = GET_ENDIAN(me, arg2);
+#elif defined(__BIG_ENDIAN)
+		error = put_user(PR_ENDIAN_BIG, (unsigned int __user *)arg2);
+#else
+		error = put_user(PR_ENDIAN_LITTLE, (unsigned int __user *)arg2);
+#endif
 		break;
 	case PR_SET_ENDIAN:
 		error = SET_ENDIAN(me, arg2);
