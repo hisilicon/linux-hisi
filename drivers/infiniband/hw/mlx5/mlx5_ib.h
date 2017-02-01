@@ -202,6 +202,7 @@ struct mlx5_ib_flow_db {
 #define MLX5_IB_UPD_XLT_ADDR	      BIT(3)
 #define MLX5_IB_UPD_XLT_PD	      BIT(4)
 #define MLX5_IB_UPD_XLT_ACCESS	      BIT(5)
+#define MLX5_IB_UPD_XLT_INDIRECT      BIT(6)
 
 /* Private QP creation flags to be passed in ib_qp_init_attr.create_flags.
  *
@@ -503,6 +504,10 @@ struct mlx5_ib_mr {
 	int			live;
 	void			*descs_alloc;
 	int			access_flags; /* Needed for rereg MR */
+
+	struct mlx5_ib_mr      *parent;
+	atomic_t		num_leaf_free;
+	wait_queue_head_t       q_leaf_free;
 };
 
 struct mlx5_ib_mw {
@@ -541,6 +546,10 @@ struct mlx5_cache_ent {
 	struct dentry	       *dir;
 	char                    name[4];
 	u32                     order;
+	u32			xlt;
+	u32			access_mode;
+	u32			page;
+
 	u32			size;
 	u32                     cur;
 	u32                     miss;
@@ -555,6 +564,7 @@ struct mlx5_cache_ent {
 	struct work_struct	work;
 	struct delayed_work	dwork;
 	int			pending;
+	struct completion	compl;
 };
 
 struct mlx5_mr_cache {
@@ -632,6 +642,7 @@ struct mlx5_ib_dev {
 	 * being used by a page fault handler.
 	 */
 	struct srcu_struct      mr_srcu;
+	u32			null_mkey;
 #endif
 	struct mlx5_ib_flow_db	flow_db;
 	/* protect resources needed as part of reset flow */
@@ -784,6 +795,9 @@ struct ib_mw *mlx5_ib_alloc_mw(struct ib_pd *pd, enum ib_mw_type type,
 int mlx5_ib_dealloc_mw(struct ib_mw *mw);
 int mlx5_ib_update_xlt(struct mlx5_ib_mr *mr, u64 idx, int npages,
 		       int page_shift, int flags);
+struct mlx5_ib_mr *mlx5_ib_alloc_implicit_mr(struct mlx5_ib_pd *pd,
+					     int access_flags);
+void mlx5_ib_free_implicit_mr(struct mlx5_ib_mr *mr);
 int mlx5_ib_rereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 			  u64 length, u64 virt_addr, int access_flags,
 			  struct ib_pd *pd, struct ib_udata *udata);
@@ -837,7 +851,9 @@ void mlx5_ib_copy_pas(u64 *old, u64 *new, int step, int num);
 int mlx5_ib_get_cqe_size(struct mlx5_ib_dev *dev, struct ib_cq *ibcq);
 int mlx5_mr_cache_init(struct mlx5_ib_dev *dev);
 int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev);
-int mlx5_mr_ib_cont_pages(struct ib_umem *umem, u64 addr, int *count, int *shift);
+
+struct mlx5_ib_mr *mlx5_mr_cache_alloc(struct mlx5_ib_dev *dev, int entry);
+void mlx5_mr_cache_free(struct mlx5_ib_dev *dev, struct mlx5_ib_mr *mr);
 int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 			    struct ib_mr_status *mr_status);
 struct ib_wq *mlx5_ib_create_wq(struct ib_pd *pd,
@@ -861,6 +877,9 @@ int __init mlx5_ib_odp_init(void);
 void mlx5_ib_odp_cleanup(void);
 void mlx5_ib_invalidate_range(struct ib_umem *umem, unsigned long start,
 			      unsigned long end);
+void mlx5_odp_init_mr_cache_entry(struct mlx5_cache_ent *ent);
+void mlx5_odp_populate_klm(struct mlx5_klm *pklm, size_t offset,
+			   size_t nentries, struct mlx5_ib_mr *mr, int flags);
 #else /* CONFIG_INFINIBAND_ON_DEMAND_PAGING */
 static inline void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev)
 {
@@ -868,9 +887,13 @@ static inline void mlx5_ib_internal_fill_odp_caps(struct mlx5_ib_dev *dev)
 }
 
 static inline int mlx5_ib_odp_init_one(struct mlx5_ib_dev *ibdev) { return 0; }
-static inline void mlx5_ib_odp_remove_one(struct mlx5_ib_dev *ibdev)	{}
+static inline void mlx5_ib_odp_remove_one(struct mlx5_ib_dev *ibdev)	    {}
 static inline int mlx5_ib_odp_init(void) { return 0; }
-static inline void mlx5_ib_odp_cleanup(void)				{}
+static inline void mlx5_ib_odp_cleanup(void)				    {}
+static inline void mlx5_odp_init_mr_cache_entry(struct mlx5_cache_ent *ent) {}
+static inline void mlx5_odp_populate_klm(struct mlx5_klm *pklm, size_t offset,
+					 size_t nentries, struct mlx5_ib_mr *mr,
+					 int flags) {}
 
 #endif /* CONFIG_INFINIBAND_ON_DEMAND_PAGING */
 
