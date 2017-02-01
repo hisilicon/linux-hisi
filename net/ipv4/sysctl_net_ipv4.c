@@ -290,13 +290,6 @@ static struct ctl_table ipv4_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 	{
-		.procname	= "tcp_max_tw_buckets",
-		.data		= &tcp_death_row.sysctl_max_tw_buckets,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec
-	},
-	{
 		.procname	= "tcp_fastopen",
 		.data		= &sysctl_tcp_fastopen,
 		.maxlen		= sizeof(int),
@@ -308,13 +301,6 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0600,
 		.maxlen		= ((TCP_FASTOPEN_KEY_LENGTH * 2) + 10),
 		.proc_handler	= proc_tcp_fastopen_key,
-	},
-	{
-		.procname	= "tcp_tw_recycle",
-		.data		= &tcp_death_row.sysctl_tw_recycle,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec
 	},
 	{
 		.procname	= "tcp_abort_on_overflow",
@@ -333,13 +319,6 @@ static struct ctl_table ipv4_table[] = {
 	{
 		.procname	= "tcp_rfc1337",
 		.data		= &sysctl_tcp_rfc1337,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec
-	},
-	{
-		.procname	= "tcp_max_syn_backlog",
-		.data		= &sysctl_max_syn_backlog,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
@@ -956,6 +935,27 @@ static struct ctl_table ipv4_net_table[] = {
 	{
 		.procname	= "tcp_tw_reuse",
 		.data		= &init_net.ipv4.sysctl_tcp_tw_reuse,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
+	{
+		.procname	= "tcp_max_tw_buckets",
+		.data		= &init_net.ipv4.tcp_death_row.sysctl_max_tw_buckets,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
+	{
+		.procname	= "tcp_tw_recycle",
+		.data		= &init_net.ipv4.tcp_death_row.sysctl_tw_recycle,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
+	{
+		.procname	= "tcp_max_syn_backlog",
+		.data		= &init_net.ipv4.sysctl_max_syn_backlog,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec

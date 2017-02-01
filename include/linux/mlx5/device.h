@@ -212,10 +212,20 @@ enum {
 };
 
 enum {
-	MLX5_BF_REGS_PER_PAGE		= 4,
-	MLX5_MAX_UAR_PAGES		= 1 << 8,
-	MLX5_NON_FP_BF_REGS_PER_PAGE	= 2,
-	MLX5_MAX_UUARS	= MLX5_MAX_UAR_PAGES * MLX5_NON_FP_BF_REGS_PER_PAGE,
+	MLX5_ADAPTER_PAGE_SHIFT		= 12,
+	MLX5_ADAPTER_PAGE_SIZE		= 1 << MLX5_ADAPTER_PAGE_SHIFT,
+};
+
+enum {
+	MLX5_BFREGS_PER_UAR		= 4,
+	MLX5_MAX_UARS			= 1 << 8,
+	MLX5_NON_FP_BFREGS_PER_UAR	= 2,
+	MLX5_FP_BFREGS_PER_UAR		= MLX5_BFREGS_PER_UAR -
+					  MLX5_NON_FP_BFREGS_PER_UAR,
+	MLX5_MAX_BFREGS			= MLX5_MAX_UARS *
+					  MLX5_NON_FP_BFREGS_PER_UAR,
+	MLX5_UARS_IN_PAGE		= PAGE_SIZE / MLX5_ADAPTER_PAGE_SIZE,
+	MLX5_NON_FP_BFREGS_IN_PAGE	= MLX5_NON_FP_BFREGS_PER_UAR * MLX5_UARS_IN_PAGE,
 };
 
 enum {
@@ -389,11 +399,6 @@ enum {
 };
 
 enum {
-	MLX5_ADAPTER_PAGE_SHIFT		= 12,
-	MLX5_ADAPTER_PAGE_SIZE		= 1 << MLX5_ADAPTER_PAGE_SHIFT,
-};
-
-enum {
 	MLX5_CAP_OFF_CMDIF_CSUM		= 46,
 };
 
@@ -534,7 +539,9 @@ struct mlx5_eqe_page_fault {
 			__be16  wqe_index;
 			u16	reserved2;
 			__be16  packet_length;
-			u8	reserved3[12];
+			__be32  token;
+			u8	reserved4[8];
+			__be32  pftype_wq;
 		} __packed wqe;
 		struct {
 			__be32  r_key;
@@ -542,9 +549,9 @@ struct mlx5_eqe_page_fault {
 			__be16  packet_length;
 			__be32  rdma_op_len;
 			__be64  rdma_va;
+			__be32  pftype_token;
 		} __packed rdma;
 	} __packed;
-	__be32 flags_qpn;
 } __packed;
 
 struct mlx5_eqe_vport_change {
