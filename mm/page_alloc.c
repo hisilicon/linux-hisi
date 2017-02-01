@@ -92,6 +92,10 @@ EXPORT_PER_CPU_SYMBOL(_numa_mem_);
 int _node_numa_mem_[MAX_NUMNODES];
 #endif
 
+/* work_structs for global per-cpu drains */
+DEFINE_MUTEX(pcpu_drain_mutex);
+DEFINE_PER_CPU(struct work_struct, pcpu_drain);
+
 #ifdef CONFIG_GCC_PLUGIN_LATENT_ENTROPY
 volatile unsigned long latent_entropy __latent_entropy;
 EXPORT_SYMBOL(latent_entropy);
@@ -2351,7 +2355,6 @@ static void drain_local_pages_wq(struct work_struct *work)
  */
 void drain_all_pages(struct zone *zone)
 {
-	struct work_struct __percpu *works;
 	int cpu;
 
 	/*
@@ -2365,11 +2368,21 @@ void drain_all_pages(struct zone *zone)
 		return;
 
 	/*
+	 * Do not drain if one is already in progress unless it's specific to
+	 * a zone. Such callers are primarily CMA and memory hotplug and need
+	 * the drain to be complete when the call returns.
+	 */
+	if (unlikely(!mutex_trylock(&pcpu_drain_mutex))) {
+		if (!zone)
+			return;
+		mutex_lock(&pcpu_drain_mutex);
+	}
+
+	/*
 	 * As this can be called from reclaim context, do not reenter reclaim.
 	 * An allocation failure can be handled, it's simply slower
 	 */
 	get_online_cpus();
-	works = alloc_percpu_gfp(struct work_struct, GFP_ATOMIC);
 
 	/*
 	 * We don't care about racing with CPU hotplug event
@@ -2402,24 +2415,16 @@ void drain_all_pages(struct zone *zone)
 			cpumask_clear_cpu(cpu, &cpus_with_pcps);
 	}
 
-	if (works) {
-		for_each_cpu(cpu, &cpus_with_pcps) {
-			struct work_struct *work = per_cpu_ptr(works, cpu);
-			INIT_WORK(work, drain_local_pages_wq);
-			schedule_work_on(cpu, work);
-		}
-		for_each_cpu(cpu, &cpus_with_pcps)
-			flush_work(per_cpu_ptr(works, cpu));
-	} else {
-		for_each_cpu(cpu, &cpus_with_pcps) {
-			struct work_struct work;
-
-			INIT_WORK(&work, drain_local_pages_wq);
-			schedule_work_on(cpu, &work);
-			flush_work(&work);
-		}
+	for_each_cpu(cpu, &cpus_with_pcps) {
+		struct work_struct *work = per_cpu_ptr(&pcpu_drain, cpu);
+		INIT_WORK(work, drain_local_pages_wq);
+		schedule_work_on(cpu, work);
 	}
+	for_each_cpu(cpu, &cpus_with_pcps)
+		flush_work(per_cpu_ptr(&pcpu_drain, cpu));
+
 	put_online_cpus();
+	mutex_unlock(&pcpu_drain_mutex);
 }
 
 #ifdef CONFIG_HIBERNATION
