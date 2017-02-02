@@ -899,11 +899,11 @@ int target_configure_device(struct se_device *dev)
 	/*
 	 * Startup the struct se_device processing thread
 	 */
-	dev->tmr_wq = alloc_workqueue("tmr-%s", WQ_MEM_RECLAIM | WQ_UNBOUND, 1,
-				      dev->transport->name);
-	if (!dev->tmr_wq) {
-		pr_err("Unable to create tmr workqueue for %s\n",
-			dev->transport->name);
+	dev->alua_wq = alloc_workqueue("alua-%s", WQ_UNBOUND, 1,
+				       dev->transport->name);
+	if (!dev->alua_wq) {
+		pr_err("Unable to create ALUA workqueue for %s\n",
+		       dev->transport->name);
 		ret = -ENOMEM;
 		goto out_free_alua;
 	}
@@ -954,7 +954,7 @@ void target_free_device(struct se_device *dev)
 	WARN_ON(!list_empty(&dev->dev_sep_list));
 
 	if (dev->dev_flags & DF_CONFIGURED) {
-		destroy_workqueue(dev->tmr_wq);
+		destroy_workqueue(dev->alua_wq);
 
 		mutex_lock(&g_device_mutex);
 		list_del(&dev->g_dev_node);
