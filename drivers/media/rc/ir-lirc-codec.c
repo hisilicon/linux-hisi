@@ -279,7 +279,7 @@ static long ir_lirc_ioctl(struct file *filep, unsigned int cmd,
 	case LIRC_GET_MIN_TIMEOUT:
 		if (!dev->max_timeout)
 			return -ENOSYS;
-		val = dev->min_timeout / 1000;
+		val = DIV_ROUND_UP(dev->min_timeout, 1000);
 		break;
 
 	case LIRC_GET_MAX_TIMEOUT:
@@ -347,7 +347,7 @@ static int ir_lirc_register(struct rc_dev *dev)
 	struct lirc_driver *drv;
 	struct lirc_buffer *rbuf;
 	int rc = -ENOMEM;
-	unsigned long features;
+	unsigned long features = 0;
 
 	drv = kzalloc(sizeof(struct lirc_driver), GFP_KERNEL);
 	if (!drv)
@@ -361,7 +361,8 @@ static int ir_lirc_register(struct rc_dev *dev)
 	if (rc)
 		goto rbuf_init_failed;
 
-	features = LIRC_CAN_REC_MODE2;
+	if (dev->driver_type != RC_DRIVER_IR_RAW_TX)
+		features |= LIRC_CAN_REC_MODE2;
 	if (dev->tx_ir) {
 		features |= LIRC_CAN_SEND_PULSE;
 		if (dev->s_tx_mask)

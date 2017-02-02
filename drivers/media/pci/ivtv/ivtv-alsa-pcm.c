@@ -18,21 +18,18 @@
  *  GNU General Public License for more details.
  */
 
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/vmalloc.h>
-
-#include <media/v4l2-device.h>
-
-#include <sound/core.h>
-#include <sound/pcm.h>
-
 #include "ivtv-driver.h"
 #include "ivtv-queue.h"
 #include "ivtv-streams.h"
 #include "ivtv-fileops.h"
 #include "ivtv-alsa.h"
 #include "ivtv-alsa-pcm.h"
+
+#include <linux/vmalloc.h>
+
+#include <sound/core.h>
+#include <sound/pcm.h>
+
 
 static unsigned int pcm_debug;
 module_param(pcm_debug, int, 0644);
@@ -169,6 +166,7 @@ static int snd_ivtv_pcm_capture_open(struct snd_pcm_substream *substream)
 	/* See if the stream is available */
 	if (ivtv_claim_stream(&item, item.type)) {
 		/* No, it's already in use */
+		v4l2_fh_exit(&item.fh);
 		snd_ivtv_unlock(itvsc);
 		return -EBUSY;
 	}
