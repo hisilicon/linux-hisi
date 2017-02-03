@@ -91,10 +91,21 @@
 struct mt2060_priv {
 	struct mt2060_config *cfg;
 	struct i2c_adapter   *i2c;
+	struct i2c_client *client;
+	struct mt2060_config config;
 
+	u8 i2c_max_regs;
 	u32 frequency;
 	u16 if1_freq;
 	u8  fmfreq;
+
+	/*
+	 * Use REG_MISC_CTRL register for sleep. That drops sleep power usage
+	 * about 0.9W (huge!). Register bit meanings are unknown, so let it be
+	 * disabled by default to avoid possible regression. Convert driver to
+	 * i2c model in order to enable it.
+	 */
+	bool sleep;
 };
 
 #endif
