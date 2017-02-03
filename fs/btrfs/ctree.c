@@ -28,9 +28,9 @@
 
 static int split_node(struct btrfs_trans_handle *trans, struct btrfs_root
 		      *root, struct btrfs_path *path, int level);
-static int split_leaf(struct btrfs_trans_handle *trans, struct btrfs_root
-		      *root, struct btrfs_key *ins_key,
-		      struct btrfs_path *path, int data_size, int extend);
+static int split_leaf(struct btrfs_trans_handle *trans, struct btrfs_root *root,
+		      const struct btrfs_key *ins_key, struct btrfs_path *path,
+		      int data_size, int extend);
 static int push_node_left(struct btrfs_trans_handle *trans,
 			  struct btrfs_fs_info *fs_info,
 			  struct extent_buffer *dst,
@@ -426,7 +426,7 @@ void btrfs_put_tree_mod_seq(struct btrfs_fs_info *fs_info,
 	tm_root = &fs_info->tree_mod_log;
 	for (node = rb_first(tm_root); node; node = next) {
 		next = rb_next(node);
-		tm = container_of(node, struct tree_mod_elem, node);
+		tm = rb_entry(node, struct tree_mod_elem, node);
 		if (tm->seq > min_seq)
 			continue;
 		rb_erase(node, tm_root);
@@ -460,7 +460,7 @@ __tree_mod_log_insert(struct btrfs_fs_info *fs_info, struct tree_mod_elem *tm)
 	tm_root = &fs_info->tree_mod_log;
 	new = &tm_root->rb_node;
 	while (*new) {
-		cur = container_of(*new, struct tree_mod_elem, node);
+		cur = rb_entry(*new, struct tree_mod_elem, node);
 		parent = *new;
 		if (cur->logical < tm->logical)
 			new = &((*new)->rb_left);
@@ -746,7 +746,7 @@ __tree_mod_log_search(struct btrfs_fs_info *fs_info, u64 start, u64 min_seq,
 	tm_root = &fs_info->tree_mod_log;
 	node = tm_root->rb_node;
 	while (node) {
-		cur = container_of(node, struct tree_mod_elem, node);
+		cur = rb_entry(node, struct tree_mod_elem, node);
 		if (cur->logical < start) {
 			node = node->rb_left;
 		} else if (cur->logical > start) {
@@ -1326,7 +1326,7 @@ __tree_mod_log_rewind(struct btrfs_fs_info *fs_info, struct extent_buffer *eb,
 		next = rb_next(&tm->node);
 		if (!next)
 			break;
-		tm = container_of(next, struct tree_mod_elem, node);
+		tm = rb_entry(next, struct tree_mod_elem, node);
 		if (tm->logical != first_tm->logical)
 			break;
 	}
@@ -1580,7 +1580,8 @@ static int close_blocks(u64 blocknr, u64 other, u32 blocksize)
 /*
  * compare two keys in a memcmp fashion
  */
-static int comp_keys(struct btrfs_disk_key *disk, struct btrfs_key *k2)
+static int comp_keys(const struct btrfs_disk_key *disk,
+		     const struct btrfs_key *k2)
 {
 	struct btrfs_key k1;
 
@@ -1592,7 +1593,7 @@ static int comp_keys(struct btrfs_disk_key *disk, struct btrfs_key *k2)
 /*
  * same as comp_keys only with two btrfs_key's
  */
-int btrfs_comp_cpu_keys(struct btrfs_key *k1, struct btrfs_key *k2)
+int btrfs_comp_cpu_keys(const struct btrfs_key *k1, const struct btrfs_key *k2)
 {
 	if (k1->objectid > k2->objectid)
 		return 1;
@@ -1732,8 +1733,8 @@ int btrfs_realloc_node(struct btrfs_trans_handle *trans,
  * slot may point to max if the key is bigger than all of the keys
  */
 static noinline int generic_bin_search(struct extent_buffer *eb,
-				       unsigned long p,
-				       int item_size, struct btrfs_key *key,
+				       unsigned long p, int item_size,
+				       const struct btrfs_key *key,
 				       int max, int *slot)
 {
 	int low = 0;
@@ -1802,7 +1803,7 @@ static noinline int generic_bin_search(struct extent_buffer *eb,
  * simple bin_search frontend that does the right thing for
  * leaves vs nodes
  */
-static int bin_search(struct extent_buffer *eb, struct btrfs_key *key,
+static int bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
 		      int level, int *slot)
 {
 	if (level == 0)
@@ -1819,7 +1820,7 @@ static int bin_search(struct extent_buffer *eb, struct btrfs_key *key,
 					  slot);
 }
 
-int btrfs_bin_search(struct extent_buffer *eb, struct btrfs_key *key,
+int btrfs_bin_search(struct extent_buffer *eb, const struct btrfs_key *key,
 		     int level, int *slot)
 {
 	return bin_search(eb, key, level, slot);
@@ -2439,7 +2440,7 @@ noinline void btrfs_unlock_up_safe(struct btrfs_path *path, int level)
 static int
 read_block_for_search(struct btrfs_root *root, struct btrfs_path *p,
 		      struct extent_buffer **eb_ret, int level, int slot,
-		      struct btrfs_key *key, u64 time_seq)
+		      const struct btrfs_key *key, u64 time_seq)
 {
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	u64 blocknr;
@@ -2586,7 +2587,7 @@ done:
 }
 
 static void key_search_validate(struct extent_buffer *b,
-				struct btrfs_key *key,
+				const struct btrfs_key *key,
 				int level)
 {
 #ifdef CONFIG_BTRFS_ASSERT
@@ -2605,7 +2606,7 @@ static void key_search_validate(struct extent_buffer *b,
 #endif
 }
 
-static int key_search(struct extent_buffer *b, struct btrfs_key *key,
+static int key_search(struct extent_buffer *b, const struct btrfs_key *key,
 		      int level, int *prev_cmp, int *slot)
 {
 	if (*prev_cmp != 0) {
@@ -2667,9 +2668,9 @@ int btrfs_find_item(struct btrfs_root *fs_root, struct btrfs_path *path,
  * tree.  if ins_len < 0, nodes will be merged as we walk down the tree (if
  * possible)
  */
-int btrfs_search_slot(struct btrfs_trans_handle *trans, struct btrfs_root
-		      *root, struct btrfs_key *key, struct btrfs_path *p, int
-		      ins_len, int cow)
+int btrfs_search_slot(struct btrfs_trans_handle *trans, struct btrfs_root *root,
+		      const struct btrfs_key *key, struct btrfs_path *p,
+		      int ins_len, int cow)
 {
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct extent_buffer *b;
@@ -2952,7 +2953,7 @@ done:
  * The resulting path and return value will be set up as if we called
  * btrfs_search_slot at that point in time with ins_len and cow both set to 0.
  */
-int btrfs_search_old_slot(struct btrfs_root *root, struct btrfs_key *key,
+int btrfs_search_old_slot(struct btrfs_root *root, const struct btrfs_key *key,
 			  struct btrfs_path *p, u64 time_seq)
 {
 	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -3066,8 +3067,9 @@ done:
  * < 0 on error
  */
 int btrfs_search_slot_for_read(struct btrfs_root *root,
-			       struct btrfs_key *key, struct btrfs_path *p,
-			       int find_higher, int return_any)
+			       const struct btrfs_key *key,
+			       struct btrfs_path *p, int find_higher,
+			       int return_any)
 {
 	int ret;
 	struct extent_buffer *leaf;
@@ -3165,7 +3167,7 @@ static void fixup_low_keys(struct btrfs_fs_info *fs_info,
  */
 void btrfs_set_item_key_safe(struct btrfs_fs_info *fs_info,
 			     struct btrfs_path *path,
-			     struct btrfs_key *new_key)
+			     const struct btrfs_key *new_key)
 {
 	struct btrfs_disk_key disk_key;
 	struct extent_buffer *eb;
@@ -4179,7 +4181,7 @@ static noinline int push_for_double_split(struct btrfs_trans_handle *trans,
  */
 static noinline int split_leaf(struct btrfs_trans_handle *trans,
 			       struct btrfs_root *root,
-			       struct btrfs_key *ins_key,
+			       const struct btrfs_key *ins_key,
 			       struct btrfs_path *path, int data_size,
 			       int extend)
 {
@@ -4414,7 +4416,7 @@ err:
 static noinline int split_item(struct btrfs_trans_handle *trans,
 			       struct btrfs_fs_info *fs_info,
 			       struct btrfs_path *path,
-			       struct btrfs_key *new_key,
+			       const struct btrfs_key *new_key,
 			       unsigned long split_offset)
 {
 	struct extent_buffer *leaf;
@@ -4500,7 +4502,7 @@ static noinline int split_item(struct btrfs_trans_handle *trans,
 int btrfs_split_item(struct btrfs_trans_handle *trans,
 		     struct btrfs_root *root,
 		     struct btrfs_path *path,
-		     struct btrfs_key *new_key,
+		     const struct btrfs_key *new_key,
 		     unsigned long split_offset)
 {
 	int ret;
@@ -4524,7 +4526,7 @@ int btrfs_split_item(struct btrfs_trans_handle *trans,
 int btrfs_duplicate_item(struct btrfs_trans_handle *trans,
 			 struct btrfs_root *root,
 			 struct btrfs_path *path,
-			 struct btrfs_key *new_key)
+			 const struct btrfs_key *new_key)
 {
 	struct extent_buffer *leaf;
 	int ret;
@@ -4725,7 +4727,7 @@ void btrfs_extend_item(struct btrfs_fs_info *fs_info, struct btrfs_path *path,
  * that doesn't call btrfs_search_slot
  */
 void setup_items_for_insert(struct btrfs_root *root, struct btrfs_path *path,
-			    struct btrfs_key *cpu_key, u32 *data_size,
+			    const struct btrfs_key *cpu_key, u32 *data_size,
 			    u32 total_data, u32 total_size, int nr)
 {
 	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -4819,7 +4821,7 @@ void setup_items_for_insert(struct btrfs_root *root, struct btrfs_path *path,
 int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
 			    struct btrfs_root *root,
 			    struct btrfs_path *path,
-			    struct btrfs_key *cpu_key, u32 *data_size,
+			    const struct btrfs_key *cpu_key, u32 *data_size,
 			    int nr)
 {
 	int ret = 0;
@@ -4850,9 +4852,9 @@ int btrfs_insert_empty_items(struct btrfs_trans_handle *trans,
  * Given a key and some data, insert an item into the tree.
  * This does all the path init required, making room in the tree if needed.
  */
-int btrfs_insert_item(struct btrfs_trans_handle *trans, struct btrfs_root
-		      *root, struct btrfs_key *cpu_key, void *data, u32
-		      data_size)
+int btrfs_insert_item(struct btrfs_trans_handle *trans, struct btrfs_root *root,
+		      const struct btrfs_key *cpu_key, void *data,
+		      u32 data_size)
 {
 	int ret = 0;
 	struct btrfs_path *path;
