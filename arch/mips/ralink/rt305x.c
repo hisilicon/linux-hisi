@@ -89,17 +89,6 @@ static struct rt2880_pmx_group rt5350_pinmux_data[] = {
 	{ 0 }
 };
 
-static void rt305x_wdt_reset(void)
-{
-	u32 t;
-
-	/* enable WDT reset output on pin SRAM_CS_N */
-	t = rt_sysc_r32(SYSC_REG_SYSTEM_CONFIG);
-	t |= RT305X_SYSCFG_SRAM_CS0_MODE_WDT <<
-		RT305X_SYSCFG_SRAM_CS0_MODE_SHIFT;
-	rt_sysc_w32(t, SYSC_REG_SYSTEM_CONFIG);
-}
-
 static unsigned long rt5350_get_mem_size(void)
 {
 	void __iomem *sysc = (void __iomem *) KSEG1ADDR(RT305X_SYSC_BASE);
@@ -200,6 +189,8 @@ void __init ralink_clk_init(void)
 
 	ralink_clk_add("cpu", cpu_rate);
 	ralink_clk_add("sys", sys_rate);
+	ralink_clk_add("10000900.i2c", uart_rate);
+	ralink_clk_add("10000a00.i2s", uart_rate);
 	ralink_clk_add("10000b00.spi", sys_rate);
 	ralink_clk_add("10000b40.spi", sys_rate);
 	ralink_clk_add("10000100.timer", wdt_rate);
