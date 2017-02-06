@@ -269,9 +269,6 @@
 #define STRTAB_STE_1_SHCFG_INCOMING	1UL
 #define STRTAB_STE_1_SHCFG_SHIFT	44
 
-#define STRTAB_STE_1_PRIVCFG_UNPRIV	2UL
-#define STRTAB_STE_1_PRIVCFG_SHIFT	48
-
 #define STRTAB_STE_2_S2VMID_SHIFT	0
 #define STRTAB_STE_2_S2VMID_MASK	0xffffUL
 #define STRTAB_STE_2_VTCR_SHIFT		32
@@ -411,6 +408,9 @@
 
 /* High-level queue structures */
 #define ARM_SMMU_POLL_TIMEOUT_US	100
+
+#define MSI_IOVA_BASE			0x8000000
+#define MSI_IOVA_LENGTH			0x100000
 
 static bool disable_bypass;
 module_param_named(disable_bypass, disable_bypass, bool, S_IRUGO);
@@ -1042,13 +1042,8 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_device *smmu, u32 sid,
 		}
 	}
 
-	/* Nuke the existing Config, as we're going to rewrite it */
-	val &= ~(STRTAB_STE_0_CFG_MASK << STRTAB_STE_0_CFG_SHIFT);
-
-	if (ste->valid)
-		val |= STRTAB_STE_0_V;
-	else
-		val &= ~STRTAB_STE_0_V;
+	/* Nuke the existing STE_0 value, as we're going to rewrite it */
+	val = ste->valid ? STRTAB_STE_0_V : 0;
 
 	if (ste->bypass) {
 		val |= disable_bypass ? STRTAB_STE_0_CFG_ABORT
@@ -1073,9 +1068,7 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_device *smmu, u32 sid,
 #ifdef CONFIG_PCI_ATS
 			 STRTAB_STE_1_EATS_TRANS << STRTAB_STE_1_EATS_SHIFT |
 #endif
-			 STRTAB_STE_1_STRW_NSEL1 << STRTAB_STE_1_STRW_SHIFT |
-			 STRTAB_STE_1_PRIVCFG_UNPRIV <<
-			 STRTAB_STE_1_PRIVCFG_SHIFT);
+			 STRTAB_STE_1_STRW_NSEL1 << STRTAB_STE_1_STRW_SHIFT);
 
 		if (smmu->features & ARM_SMMU_FEAT_STALLS)
 			dst[1] |= cpu_to_le64(STRTAB_STE_1_S1STALLD);
@@ -1083,7 +1076,6 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_device *smmu, u32 sid,
 		val |= (ste->s1_cfg->cdptr_dma & STRTAB_STE_0_S1CTXPTR_MASK
 		        << STRTAB_STE_0_S1CTXPTR_SHIFT) |
 			STRTAB_STE_0_CFG_S1_TRANS;
-
 	}
 
 	if (ste->s2_cfg) {
@@ -1372,8 +1364,6 @@ static bool arm_smmu_capable(enum iommu_cap cap)
 	switch (cap) {
 	case IOMMU_CAP_CACHE_COHERENCY:
 		return true;
-	case IOMMU_CAP_INTR_REMAP:
-		return true; /* MSIs are just memory writes */
 	case IOMMU_CAP_NOEXEC:
 		return true;
 	default:
@@ -1883,6 +1873,29 @@ static int arm_smmu_of_xlate(struct device *dev, struct of_phandle_args *args)
 	return iommu_fwspec_add_ids(dev, args->args, 1);
 }
 
+static void arm_smmu_get_resv_regions(struct device *dev,
+				      struct list_head *head)
+{
+	struct iommu_resv_region *region;
+	int prot = IOMMU_WRITE | IOMMU_NOEXEC | IOMMU_MMIO;
+
+	region = iommu_alloc_resv_region(MSI_IOVA_BASE, MSI_IOVA_LENGTH,
+					 prot, IOMMU_RESV_MSI);
+	if (!region)
+		return;
+
+	list_add_tail(&region->list, head);
+}
+
+static void arm_smmu_put_resv_regions(struct device *dev,
+				      struct list_head *head)
+{
+	struct iommu_resv_region *entry, *next;
+
+	list_for_each_entry_safe(entry, next, head, list)
+		kfree(entry);
+}
+
 static struct iommu_ops arm_smmu_ops = {
 	.capable		= arm_smmu_capable,
 	.domain_alloc		= arm_smmu_domain_alloc,
@@ -1898,6 +1911,8 @@ static struct iommu_ops arm_smmu_ops = {
 	.domain_get_attr	= arm_smmu_domain_get_attr,
 	.domain_set_attr	= arm_smmu_domain_set_attr,
 	.of_xlate		= arm_smmu_of_xlate,
+	.get_resv_regions	= arm_smmu_get_resv_regions,
+	.put_resv_regions	= arm_smmu_put_resv_regions,
 	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
 };
 
@@ -1983,17 +1998,9 @@ static int arm_smmu_init_strtab_2lvl(struct arm_smmu_device *smmu)
 	u32 size, l1size;
 	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
 
-	/*
-	 * If we can resolve everything with a single L2 table, then we
-	 * just need a single L1 descriptor. Otherwise, calculate the L1
-	 * size, capped to the SIDSIZE.
-	 */
-	if (smmu->sid_bits < STRTAB_SPLIT) {
-		size = 0;
-	} else {
-		size = STRTAB_L1_SZ_SHIFT - (ilog2(STRTAB_L1_DESC_DWORDS) + 3);
-		size = min(size, smmu->sid_bits - STRTAB_SPLIT);
-	}
+	/* Calculate the L1 size, capped to the SIDSIZE. */
+	size = STRTAB_L1_SZ_SHIFT - (ilog2(STRTAB_L1_DESC_DWORDS) + 3);
+	size = min(size, smmu->sid_bits - STRTAB_SPLIT);
 	cfg->num_l1_ents = 1 << size;
 
 	size += STRTAB_SPLIT;
@@ -2503,6 +2510,13 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 	/* SID/SSID sizes */
 	smmu->ssid_bits = reg >> IDR1_SSID_SHIFT & IDR1_SSID_MASK;
 	smmu->sid_bits = reg >> IDR1_SID_SHIFT & IDR1_SID_MASK;
+
+	/*
+	 * If the SMMU supports fewer bits than would fill a single L2 stream
+	 * table, use a linear table instead.
+	 */
+	if (smmu->sid_bits <= STRTAB_SPLIT)
+		smmu->features &= ~ARM_SMMU_FEAT_2_LVL_STRTAB;
 
 	/* IDR5 */
 	reg = readl_relaxed(smmu->base + ARM_SMMU_IDR5);
