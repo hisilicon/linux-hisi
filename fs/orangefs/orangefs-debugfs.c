@@ -967,13 +967,13 @@ int orangefs_debugfs_new_client_string(void __user *arg)
 	int ret;
 
 	ret = copy_from_user(&client_debug_array_string,
-                                     (void __user *)arg,
-                                     ORANGEFS_MAX_DEBUG_STRING_LEN);
+			     (void __user *)arg,
+			     ORANGEFS_MAX_DEBUG_STRING_LEN);
 
 	if (ret != 0) {
 		pr_info("%s: CLIENT_STRING: copy_from_user failed\n",
 			__func__);
-		return -EIO;
+		return -EFAULT;
 	}
 
 	/*
@@ -988,7 +988,7 @@ int orangefs_debugfs_new_client_string(void __user *arg)
 	 */
 	client_debug_array_string[ORANGEFS_MAX_DEBUG_STRING_LEN - 1] =
 		'\0';
-	
+
 	pr_info("%s: client debug array string has been received.\n",
 		__func__);
 
@@ -998,7 +998,7 @@ int orangefs_debugfs_new_client_string(void __user *arg)
 		if (orangefs_prepare_debugfs_help_string(0)) {
 			gossip_err("%s: no debug help string \n",
 				   __func__);
-			return -EIO;
+			return -EFAULT;
 		}
 
 	}
@@ -1011,7 +1011,7 @@ int orangefs_debugfs_new_client_string(void __user *arg)
 
 	help_string_initialized++;
 
-	return ret;
+	return 0;
 }
 
 int orangefs_debugfs_new_debug(void __user *arg) 
