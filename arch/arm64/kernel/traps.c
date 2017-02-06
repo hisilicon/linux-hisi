@@ -496,7 +496,7 @@ static void ctr_read_handler(unsigned int esr, struct pt_regs *regs)
 {
 	int rt = (esr & ESR_ELx_SYS64_ISS_RT_MASK) >> ESR_ELx_SYS64_ISS_RT_SHIFT;
 
-	regs->regs[rt] = arm64_ftr_reg_ctrel0.sys_val;
+	regs->regs[rt] = arm64_ftr_reg_user_value(&arm64_ftr_reg_ctrel0);
 	regs->pc += 4;
 }
 
@@ -531,7 +531,12 @@ asmlinkage void __exception do_sysinstr(unsigned int esr, struct pt_regs *regs)
 			return;
 		}
 
-	force_signal_inject(SIGILL, ILL_ILLOPC, regs, 0);
+	/*
+	 * New SYS instructions may previously have been undefined at EL0. Fall
+	 * back to our usual undefined instruction handler so that we handle
+	 * these consistently.
+	 */
+	do_undefinstr(regs);
 }
 
 long compat_arm_syscall(struct pt_regs *regs);

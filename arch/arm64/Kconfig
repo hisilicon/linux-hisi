@@ -6,6 +6,7 @@ config ARM64
 	select ACPI_MCFG if ACPI
 	select ACPI_SPCR_TABLE if ACPI
 	select ARCH_CLOCKSOURCE_DATA
+	select ARCH_HAS_DEBUG_VIRTUAL
 	select ARCH_HAS_DEVMEM_IS_ALLOWED
 	select ARCH_HAS_ACPI_TABLE_UPGRADE if ACPI
 	select ARCH_HAS_ELF_RANDOMIZE
@@ -476,6 +477,16 @@ config CAVIUM_ERRATUM_27456
 	  instructions may cause the icache to become corrupted if it
 	  contains data for a non-current ASID.  The fix is to
 	  invalidate the icache when changing the mm context.
+
+	  If unsure, say Y.
+
+config QCOM_FALKOR_ERRATUM_1009
+	bool "Falkor E1009: Prematurely complete a DSB after a TLBI"
+	default y
+	help
+	  On Falkor v1, the CPU may prematurely complete a DSB following a
+	  TLBI xxIS invalidate maintenance operation. Repeat the TLBI operation
+	  one more time to fix the issue.
 
 	  If unsure, say Y.
 
@@ -1010,7 +1021,7 @@ source "fs/Kconfig.binfmt"
 config COMPAT
 	bool "Kernel support for 32-bit EL0"
 	depends on ARM64_4K_PAGES || EXPERT
-	select COMPAT_BINFMT_ELF
+	select COMPAT_BINFMT_ELF if BINFMT_ELF
 	select HAVE_UID16
 	select OLD_SIGSUSPEND3
 	select COMPAT_OLD_SIGACTION
