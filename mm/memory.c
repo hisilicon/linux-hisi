@@ -1001,7 +1001,7 @@ static inline int copy_pmd_range(struct mm_struct *dst_mm, struct mm_struct *src
 		next = pmd_addr_end(addr, end);
 		if (pmd_trans_huge(*src_pmd) || pmd_devmap(*src_pmd)) {
 			int err;
-			VM_BUG_ON(next-addr != HPAGE_PMD_SIZE);
+			VM_BUG_ON_VMA(next-addr != HPAGE_PMD_SIZE, vma);
 			err = copy_huge_pmd(dst_mm, src_mm,
 					    dst_pmd, src_pmd, addr, vma);
 			if (err == -ENOMEM)
@@ -1032,6 +1032,18 @@ static inline int copy_pud_range(struct mm_struct *dst_mm, struct mm_struct *src
 	src_pud = pud_offset(src_pgd, addr);
 	do {
 		next = pud_addr_end(addr, end);
+		if (pud_trans_huge(*src_pud) || pud_devmap(*src_pud)) {
+			int err;
+
+			VM_BUG_ON_VMA(next-addr != HPAGE_PUD_SIZE, vma);
+			err = copy_huge_pud(dst_mm, src_mm,
+					    dst_pud, src_pud, addr, vma);
+			if (err == -ENOMEM)
+				return -ENOMEM;
+			if (!err)
+				continue;
+			/* fall through */
+		}
 		if (pud_none_or_clear_bad(src_pud))
 			continue;
 		if (copy_pmd_range(dst_mm, src_mm, dst_pud, src_pud,
@@ -1155,12 +1167,6 @@ again:
 
 			if (!PageAnon(page)) {
 				if (pte_dirty(ptent)) {
-					/*
-					 * oom_reaper cannot tear down dirty
-					 * pages
-					 */
-					if (unlikely(details && details->ignore_dirty))
-						continue;
 					force_flush = 1;
 					set_page_dirty(page);
 				}
@@ -1179,8 +1185,8 @@ again:
 			}
 			continue;
 		}
-		/* only check swap_entries if explicitly asked for in details */
-		if (unlikely(details && !details->check_swap_entries))
+		/* If details->check_mapping, we leave swap entries. */
+		if (unlikely(details))
 			continue;
 
 		entry = pte_to_swp_entry(ptent);
@@ -1269,9 +1275,19 @@ static inline unsigned long zap_pud_range(struct mmu_gather *tlb,
 	pud = pud_offset(pgd, addr);
 	do {
 		next = pud_addr_end(addr, end);
+		if (pud_trans_huge(*pud) || pud_devmap(*pud)) {
+			if (next - addr != HPAGE_PUD_SIZE) {
+				VM_BUG_ON_VMA(!rwsem_is_locked(&tlb->mm->mmap_sem), vma);
+				split_huge_pud(vma, pud, addr);
+			} else if (zap_huge_pud(tlb, vma, pud, addr))
+				goto next;
+			/* fall through */
+		}
 		if (pud_none_or_clear_bad(pud))
 			continue;
 		next = zap_pmd_range(tlb, vma, pud, addr, next, details);
+next:
+		cond_resched();
 	} while (pud++, addr = next, addr != end);
 
 	return addr;
@@ -1376,12 +1392,11 @@ void unmap_vmas(struct mmu_gather *tlb,
  * @vma: vm_area_struct holding the applicable pages
  * @start: starting address of pages to zap
  * @size: number of bytes to zap
- * @details: details of shared cache invalidation
  *
  * Caller must protect the VMA list
  */
 void zap_page_range(struct vm_area_struct *vma, unsigned long start,
-		unsigned long size, struct zap_details *details)
+		unsigned long size)
 {
 	struct mm_struct *mm = vma->vm_mm;
 	struct mmu_gather tlb;
@@ -1392,7 +1407,7 @@ void zap_page_range(struct vm_area_struct *vma, unsigned long start,
 	update_hiwater_rss(mm);
 	mmu_notifier_invalidate_range_start(mm, start, end);
 	for ( ; vma && vma->vm_start < end; vma = vma->vm_next)
-		unmap_single_vma(&tlb, vma, start, end, details);
+		unmap_single_vma(&tlb, vma, start, end, NULL);
 	mmu_notifier_invalidate_range_end(mm, start, end);
 	tlb_finish_mmu(&tlb, start, end);
 }
@@ -2042,7 +2057,7 @@ static int do_page_mkwrite(struct vm_fault *vmf)
 
 	vmf->flags = FAULT_FLAG_WRITE|FAULT_FLAG_MKWRITE;
 
-	ret = vmf->vma->vm_ops->page_mkwrite(vmf->vma, vmf);
+	ret = vmf->vma->vm_ops->page_mkwrite(vmf);
 	/* Restore original flags so that caller is not surprised */
 	vmf->flags = old_flags;
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE)))
@@ -2314,7 +2329,7 @@ static int wp_pfn_shared(struct vm_fault *vmf)
 
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
 		vmf->flags |= FAULT_FLAG_MKWRITE;
-		ret = vma->vm_ops->pfn_mkwrite(vma, vmf);
+		ret = vma->vm_ops->pfn_mkwrite(vmf);
 		if (ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE))
 			return ret;
 		return finish_mkwrite_fault(vmf);
@@ -2868,7 +2883,7 @@ static int __do_fault(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	int ret;
 
-	ret = vma->vm_ops->fault(vma, vmf);
+	ret = vma->vm_ops->fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY |
 			    VM_FAULT_DONE_COW)))
 		return ret;
@@ -3471,12 +3486,10 @@ out:
 
 static int create_huge_pmd(struct vm_fault *vmf)
 {
-	struct vm_area_struct *vma = vmf->vma;
-	if (vma_is_anonymous(vma))
+	if (vma_is_anonymous(vmf->vma))
 		return do_huge_pmd_anonymous_page(vmf);
-	if (vma->vm_ops->pmd_fault)
-		return vma->vm_ops->pmd_fault(vma, vmf->address, vmf->pmd,
-				vmf->flags);
+	if (vmf->vma->vm_ops->huge_fault)
+		return vmf->vma->vm_ops->huge_fault(vmf);
 	return VM_FAULT_FALLBACK;
 }
 
@@ -3484,9 +3497,8 @@ static int wp_huge_pmd(struct vm_fault *vmf, pmd_t orig_pmd)
 {
 	if (vma_is_anonymous(vmf->vma))
 		return do_huge_pmd_wp_page(vmf, orig_pmd);
-	if (vmf->vma->vm_ops->pmd_fault)
-		return vmf->vma->vm_ops->pmd_fault(vmf->vma, vmf->address,
-						   vmf->pmd, vmf->flags);
+	if (vmf->vma->vm_ops->huge_fault)
+		return vmf->vma->vm_ops->huge_fault(vmf);
 
 	/* COW handled on pte level: split pmd */
 	VM_BUG_ON_VMA(vmf->vma->vm_flags & VM_SHARED, vmf->vma);
@@ -3498,6 +3510,30 @@ static int wp_huge_pmd(struct vm_fault *vmf, pmd_t orig_pmd)
 static inline bool vma_is_accessible(struct vm_area_struct *vma)
 {
 	return vma->vm_flags & (VM_READ | VM_EXEC | VM_WRITE);
+}
+
+static int create_huge_pud(struct vm_fault *vmf)
+{
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	/* No support for anonymous transparent PUD pages yet */
+	if (vma_is_anonymous(vmf->vma))
+		return VM_FAULT_FALLBACK;
+	if (vmf->vma->vm_ops->huge_fault)
+		return vmf->vma->vm_ops->huge_fault(vmf);
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+	return VM_FAULT_FALLBACK;
+}
+
+static int wp_huge_pud(struct vm_fault *vmf, pud_t orig_pud)
+{
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	/* No support for anonymous transparent PUD pages yet */
+	if (vma_is_anonymous(vmf->vma))
+		return VM_FAULT_FALLBACK;
+	if (vmf->vma->vm_ops->huge_fault)
+		return vmf->vma->vm_ops->huge_fault(vmf);
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+	return VM_FAULT_FALLBACK;
 }
 
 /*
@@ -3615,25 +3651,56 @@ static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 	};
 	struct mm_struct *mm = vma->vm_mm;
 	pgd_t *pgd;
-	pud_t *pud;
+	int ret;
 
 	pgd = pgd_offset(mm, address);
-	pud = pud_alloc(mm, pgd, address);
-	if (!pud)
+
+	vmf.pud = pud_alloc(mm, pgd, address);
+	if (!vmf.pud)
 		return VM_FAULT_OOM;
-	vmf.pmd = pmd_alloc(mm, pud, address);
-	if (!vmf.pmd)
-		return VM_FAULT_OOM;
-	if (pmd_none(*vmf.pmd) && transparent_hugepage_enabled(vma)) {
-		int ret = create_huge_pmd(&vmf);
+	if (pud_none(*vmf.pud) && transparent_hugepage_enabled(vma)) {
+		vmf.flags |= FAULT_FLAG_SIZE_PUD;
+		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;
 	} else {
+		pud_t orig_pud = *vmf.pud;
+
+		barrier();
+		if (pud_trans_huge(orig_pud) || pud_devmap(orig_pud)) {
+			unsigned int dirty = flags & FAULT_FLAG_WRITE;
+
+			vmf.flags |= FAULT_FLAG_SIZE_PUD;
+
+			/* NUMA case for anonymous PUDs would go here */
+
+			if (dirty && !pud_write(orig_pud)) {
+				ret = wp_huge_pud(&vmf, orig_pud);
+				if (!(ret & VM_FAULT_FALLBACK))
+					return ret;
+			} else {
+				huge_pud_set_accessed(&vmf, orig_pud);
+				return 0;
+			}
+		}
+	}
+
+	vmf.pmd = pmd_alloc(mm, vmf.pud, address);
+	if (!vmf.pmd)
+		return VM_FAULT_OOM;
+	if (pmd_none(*vmf.pmd) && transparent_hugepage_enabled(vma)) {
+		vmf.flags |= FAULT_FLAG_SIZE_PMD;
+		ret = create_huge_pmd(&vmf);
+		if (!(ret & VM_FAULT_FALLBACK))
+			return ret;
+		/* fall through path, remove PMD flag */
+		vmf.flags &= ~FAULT_FLAG_SIZE_PMD;
+	} else {
 		pmd_t orig_pmd = *vmf.pmd;
-		int ret;
 
 		barrier();
 		if (pmd_trans_huge(orig_pmd) || pmd_devmap(orig_pmd)) {
+			vmf.flags |= FAULT_FLAG_SIZE_PMD;
 			if (pmd_protnone(orig_pmd) && vma_is_accessible(vma))
 				return do_huge_pmd_numa_page(&vmf, orig_pmd);
 
@@ -3642,6 +3709,8 @@ static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 				ret = wp_huge_pmd(&vmf, orig_pmd);
 				if (!(ret & VM_FAULT_FALLBACK))
 					return ret;
+				/* fall through path, remove PUD flag */
+				vmf.flags &= ~FAULT_FLAG_SIZE_PUD;
 			} else {
 				huge_pmd_set_accessed(&vmf, orig_pmd);
 				return 0;
@@ -3747,13 +3816,14 @@ int __pud_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
  */
 int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 {
+	spinlock_t *ptl;
 	pmd_t *new = pmd_alloc_one(mm, address);
 	if (!new)
 		return -ENOMEM;
 
 	smp_wmb(); /* See comment in __pte_alloc */
 
-	spin_lock(&mm->page_table_lock);
+	ptl = pud_lock(mm, pud);
 #ifndef __ARCH_HAS_4LEVEL_HACK
 	if (!pud_present(*pud)) {
 		mm_inc_nr_pmds(mm);
@@ -3767,7 +3837,7 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 	} else /* Another has populated it */
 		pmd_free(mm, new);
 #endif /* __ARCH_HAS_4LEVEL_HACK */
-	spin_unlock(&mm->page_table_lock);
+	spin_unlock(ptl);
 	return 0;
 }
 #endif /* __PAGETABLE_PMD_FOLDED */
@@ -4154,6 +4224,38 @@ void copy_user_huge_page(struct page *dst, struct page *src,
 		cond_resched();
 		copy_user_highpage(dst + i, src + i, addr + i*PAGE_SIZE, vma);
 	}
+}
+
+long copy_huge_page_from_user(struct page *dst_page,
+				const void __user *usr_src,
+				unsigned int pages_per_huge_page,
+				bool allow_pagefault)
+{
+	void *src = (void *)usr_src;
+	void *page_kaddr;
+	unsigned long i, rc = 0;
+	unsigned long ret_val = pages_per_huge_page * PAGE_SIZE;
+
+	for (i = 0; i < pages_per_huge_page; i++) {
+		if (allow_pagefault)
+			page_kaddr = kmap(dst_page + i);
+		else
+			page_kaddr = kmap_atomic(dst_page + i);
+		rc = copy_from_user(page_kaddr,
+				(const void __user *)(src + i * PAGE_SIZE),
+				PAGE_SIZE);
+		if (allow_pagefault)
+			kunmap(dst_page + i);
+		else
+			kunmap_atomic(page_kaddr);
+
+		ret_val -= (PAGE_SIZE - rc);
+		if (rc)
+			break;
+
+		cond_resched();
+	}
+	return ret_val;
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE || CONFIG_HUGETLBFS */
 

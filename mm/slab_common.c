@@ -255,7 +255,7 @@ struct kmem_cache *find_mergeable(size_t size, size_t align,
 {
 	struct kmem_cache *s;
 
-	if (slab_nomerge || (flags & SLAB_NEVER_MERGE))
+	if (slab_nomerge)
 		return NULL;
 
 	if (ctor)
@@ -265,6 +265,9 @@ struct kmem_cache *find_mergeable(size_t size, size_t align,
 	align = calculate_alignment(flags, align, size);
 	size = ALIGN(size, align);
 	flags = kmem_cache_flags(size, flags, name, NULL);
+
+	if (flags & SLAB_NEVER_MERGE)
+		return NULL;
 
 	list_for_each_entry_reverse(s, &slab_caches, list) {
 		if (slab_unmergeable(s))
@@ -461,6 +464,9 @@ EXPORT_SYMBOL(kmem_cache_create);
 static int shutdown_cache(struct kmem_cache *s,
 		struct list_head *release, bool *need_rcu_barrier)
 {
+	/* free asan quarantined objects */
+	kasan_cache_shutdown(s);
+
 	if (__kmem_cache_shutdown(s) != 0)
 		return -EBUSY;
 
@@ -744,7 +750,6 @@ void kmem_cache_destroy(struct kmem_cache *s)
 	get_online_cpus();
 	get_online_mems();
 
-	kasan_cache_destroy(s);
 	mutex_lock(&slab_mutex);
 
 	s->refcount--;

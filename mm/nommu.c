@@ -517,7 +517,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 }
 
 /*
- * initialise the VMA and region record slabs
+ * initialise the percpu counter for VM and region record slabs
  */
 void __init mmap_init(void)
 {
@@ -1191,7 +1191,7 @@ error_free:
 enomem:
 	pr_err("Allocation of length %lu from process %d (%s) failed\n",
 	       len, current->pid, current->comm);
-	show_free_areas(0);
+	show_free_areas(0, NULL);
 	return -ENOMEM;
 }
 
@@ -1412,13 +1412,13 @@ error_getting_vma:
 	kmem_cache_free(vm_region_jar, region);
 	pr_warn("Allocation of vma for %lu byte allocation from process %d failed\n",
 			len, current->pid);
-	show_free_areas(0);
+	show_free_areas(0, NULL);
 	return -ENOMEM;
 
 error_getting_region:
 	pr_warn("Allocation of vm region for %lu byte allocation from process %d failed\n",
 			len, current->pid);
-	show_free_areas(0);
+	show_free_areas(0, NULL);
 	return -ENOMEM;
 }
 
@@ -1794,7 +1794,7 @@ void unmap_mapping_range(struct address_space *mapping,
 }
 EXPORT_SYMBOL(unmap_mapping_range);
 
-int filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+int filemap_fault(struct vm_fault *vmf)
 {
 	BUG();
 	return 0;
