@@ -163,7 +163,6 @@ int transport_lookup_tmr_lun(struct se_cmd *se_cmd, u64 unpacked_lun)
 	rcu_read_lock();
 	deve = target_nacl_find_deve(nacl, unpacked_lun);
 	if (deve) {
-		se_tmr->tmr_lun = rcu_dereference(deve->se_lun);
 		se_cmd->se_lun = rcu_dereference(deve->se_lun);
 		se_lun = rcu_dereference(deve->se_lun);
 		se_cmd->pr_res_key = deve->pr_res_key;
@@ -900,11 +899,11 @@ int target_configure_device(struct se_device *dev)
 	/*
 	 * Startup the struct se_device processing thread
 	 */
-	dev->tmr_wq = alloc_workqueue("tmr-%s", WQ_MEM_RECLAIM | WQ_UNBOUND, 1,
-				      dev->transport->name);
-	if (!dev->tmr_wq) {
-		pr_err("Unable to create tmr workqueue for %s\n",
-			dev->transport->name);
+	dev->alua_wq = alloc_workqueue("alua-%s", WQ_UNBOUND, 1,
+				       dev->transport->name);
+	if (!dev->alua_wq) {
+		pr_err("Unable to create ALUA workqueue for %s\n",
+		       dev->transport->name);
 		ret = -ENOMEM;
 		goto out_free_alua;
 	}
@@ -948,6 +947,18 @@ out:
 	return ret;
 }
 
+void target_get_device(struct se_device *dev)
+{
+	config_item_get(&dev->dev_group.cg_item);
+}
+EXPORT_SYMBOL(target_get_device);
+
+void target_put_device(struct se_device *dev)
+{
+	config_item_put(&dev->dev_group.cg_item);
+}
+EXPORT_SYMBOL(target_put_device);
+
 void target_free_device(struct se_device *dev)
 {
 	struct se_hba *hba = dev->se_hba;
@@ -955,7 +966,7 @@ void target_free_device(struct se_device *dev)
 	WARN_ON(!list_empty(&dev->dev_sep_list));
 
 	if (dev->dev_flags & DF_CONFIGURED) {
-		destroy_workqueue(dev->tmr_wq);
+		destroy_workqueue(dev->alua_wq);
 
 		mutex_lock(&g_device_mutex);
 		list_del(&dev->g_dev_node);

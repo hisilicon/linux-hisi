@@ -83,14 +83,12 @@ void ft_dump_cmd(struct ft_cmd *cmd, const char *caller)
 static void ft_free_cmd(struct ft_cmd *cmd)
 {
 	struct fc_frame *fp;
-	struct fc_lport *lport;
 	struct ft_sess *sess;
 
 	if (!cmd)
 		return;
 	sess = cmd->sess;
 	fp = cmd->req_frame;
-	lport = fr_dev(fp);
 	if (fr_seq(fp))
 		fc_seq_release(fr_seq(fp));
 	fc_frame_free(fp);
@@ -185,13 +183,6 @@ int ft_queue_status(struct se_cmd *se_cmd)
 	 */
 	target_put_sess_cmd(&cmd->se_cmd);
 	return 0;
-}
-
-int ft_write_pending_status(struct se_cmd *se_cmd)
-{
-	struct ft_cmd *cmd = container_of(se_cmd, struct ft_cmd, se_cmd);
-
-	return cmd->write_data_len != se_cmd->data_length;
 }
 
 /*

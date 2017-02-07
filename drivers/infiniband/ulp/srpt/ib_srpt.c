@@ -1169,6 +1169,7 @@ static int srpt_abort_cmd(struct srpt_send_ioctx *ioctx)
 		 * Do nothing - defer abort processing until
 		 * srpt_queue_response() is invoked.
 		 */
+		WARN_ON_ONCE(!(ioctx->cmd.transport_state & CMD_T_ABORTED));
 		break;
 	case SRPT_STATE_NEED_DATA:
 		pr_debug("tag %#llx: RDMA read error\n", ioctx->cmd.tag);
@@ -2199,14 +2200,6 @@ static int srpt_cm_handler(struct ib_cm_id *cm_id, struct ib_cm_event *event)
 	return ret;
 }
 
-static int srpt_write_pending_status(struct se_cmd *se_cmd)
-{
-	struct srpt_send_ioctx *ioctx;
-
-	ioctx = container_of(se_cmd, struct srpt_send_ioctx, cmd);
-	return srpt_get_cmd_state(ioctx) == SRPT_STATE_NEED_DATA;
-}
-
 /*
  * srpt_write_pending() - Start data transfer from initiator to target (write).
  */
@@ -2302,7 +2295,7 @@ static void srpt_queue_response(struct se_cmd *cmd)
 	}
 	spin_unlock_irqrestore(&ioctx->spinlock, flags);
 
-	if (unlikely(transport_check_aborted_status(&ioctx->cmd, false)
+	if (unlikely((ioctx->cmd.transport_state & CMD_T_ABORTED)
 		     || WARN_ON_ONCE(state == SRPT_STATE_CMD_RSP_SENT))) {
 		atomic_inc(&ch->req_lim_delta);
 		srpt_abort_cmd(ioctx);
@@ -3081,7 +3074,6 @@ static const struct target_core_fabric_ops srpt_template = {
 	.sess_get_index			= srpt_sess_get_index,
 	.sess_get_initiator_sid		= NULL,
 	.write_pending			= srpt_write_pending,
-	.write_pending_status		= srpt_write_pending_status,
 	.set_default_node_attributes	= srpt_set_default_node_attrs,
 	.get_cmd_state			= srpt_get_tcm_cmd_state,
 	.queue_data_in			= srpt_queue_data_in,

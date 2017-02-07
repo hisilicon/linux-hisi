@@ -75,25 +75,6 @@ void core_tmr_release_req(struct se_tmr_req *tmr)
 	kfree(tmr);
 }
 
-static void core_tmr_handle_tas_abort(struct se_cmd *cmd, int tas)
-{
-	unsigned long flags;
-	bool remove = true, send_tas;
-	/*
-	 * TASK ABORTED status (TAS) bit support
-	 */
-	spin_lock_irqsave(&cmd->t_state_lock, flags);
-	send_tas = (cmd->transport_state & CMD_T_TAS);
-	spin_unlock_irqrestore(&cmd->t_state_lock, flags);
-
-	if (send_tas) {
-		remove = false;
-		transport_send_task_abort(cmd);
-	}
-
-	transport_cmd_finish_abort(cmd, remove);
-}
-
 static int target_check_cdb_and_preempt(struct list_head *list,
 		struct se_cmd *cmd)
 {
@@ -109,17 +90,15 @@ static int target_check_cdb_and_preempt(struct list_head *list,
 	return 1;
 }
 
-static bool __target_check_io_state(struct se_cmd *se_cmd,
-				    struct se_session *tmr_sess, int tas)
+static bool __target_check_io_state(struct se_cmd *se_cmd)
 {
 	struct se_session *sess = se_cmd->se_sess;
 
 	assert_spin_locked(&sess->sess_cmd_lock);
 	WARN_ON_ONCE(!irqs_disabled());
 	/*
-	 * If command already reached CMD_T_COMPLETE state within
-	 * target_complete_cmd() or CMD_T_FABRIC_STOP due to shutdown,
-	 * this se_cmd has been passed to fabric driver and will
+	 * If a command has already reached the CMD_T_COMPLETE state,
+	 * it has already been passed to the fabric driver and will
 	 * not be aborted.
 	 *
 	 * Otherwise, obtain a local se_cmd->cmd_kref now for TMR
@@ -127,28 +106,25 @@ static bool __target_check_io_state(struct se_cmd *se_cmd,
 	 * long as se_cmd->cmd_kref is still active unless zero.
 	 */
 	spin_lock(&se_cmd->t_state_lock);
-	if (se_cmd->transport_state & (CMD_T_COMPLETE | CMD_T_FABRIC_STOP)) {
-		pr_debug("Attempted to abort io tag: %llu already complete or"
-			" fabric stop, skipping\n", se_cmd->tag);
-		spin_unlock(&se_cmd->t_state_lock);
-		return false;
-	}
-	if (sess->sess_tearing_down || se_cmd->cmd_wait_set) {
-		pr_debug("Attempted to abort io tag: %llu already shutdown,"
-			" skipping\n", se_cmd->tag);
+	if (se_cmd->transport_state & CMD_T_COMPLETE) {
+		pr_debug("Response for command with tag %llu is being sent to initiator, skipping\n",
+			 se_cmd->tag);
 		spin_unlock(&se_cmd->t_state_lock);
 		return false;
 	}
 	se_cmd->transport_state |= CMD_T_ABORTED;
-
-	if ((tmr_sess != se_cmd->se_sess) && tas)
-		se_cmd->transport_state |= CMD_T_TAS;
-
 	spin_unlock(&se_cmd->t_state_lock);
 
 	return kref_get_unless_zero(&se_cmd->cmd_kref);
 }
 
+/**
+ * core_tmr_abort_task - abort a SCSI command
+ * @dev: LUN specified in task management function or NULL if no LUN has been
+ *	 specified.
+ * @tmr: Task management function.
+ * @se_sess: Session a.k.a. I_T nexus.
+ */
 void core_tmr_abort_task(
 	struct se_device *dev,
 	struct se_tmr_req *tmr,
@@ -161,7 +137,7 @@ void core_tmr_abort_task(
 	spin_lock_irqsave(&se_sess->sess_cmd_lock, flags);
 	list_for_each_entry(se_cmd, &se_sess->sess_cmd_list, se_cmd_list) {
 
-		if (dev != se_cmd->se_dev)
+		if (dev && dev != se_cmd->se_dev)
 			continue;
 
 		/* skip task management functions, including tmr->task_cmd */
@@ -175,17 +151,23 @@ void core_tmr_abort_task(
 		printk("ABORT_TASK: Found referenced %s task_tag: %llu\n",
 			se_cmd->se_tfo->get_fabric_name(), ref_tag);
 
-		if (!__target_check_io_state(se_cmd, se_sess, 0)) {
-			spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
-			goto out;
+		if (!__target_check_io_state(se_cmd))
+			continue;
+
+		if (!tmr->tmr_dev &&
+		    transport_lookup_tmr_lun(tmr->task_cmd,
+					     se_cmd->orig_fe_lun) < 0) {
+			target_put_sess_cmd(se_cmd);
+			continue;
 		}
-		list_del_init(&se_cmd->se_cmd_list);
+
+		se_cmd->send_abort_response = false;
 		spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
 
-		cancel_work_sync(&se_cmd->work);
-		transport_wait_for_tasks(se_cmd);
+		while (!wait_for_completion_timeout(&se_cmd->finished, 180 * HZ))
+			pr_debug("ABORT TASK: still waiting for ITT %#llx\n",
+				 ref_tag);
 
-		transport_cmd_finish_abort(se_cmd, true);
 		target_put_sess_cmd(se_cmd);
 
 		printk("ABORT_TASK: Sending TMR_FUNCTION_COMPLETE for"
@@ -195,7 +177,6 @@ void core_tmr_abort_task(
 	}
 	spin_unlock_irqrestore(&se_sess->sess_cmd_lock, flags);
 
-out:
 	printk("ABORT_TASK: Sending TMR_TASK_DOES_NOT_EXIST for ref_tag: %lld\n",
 			tmr->ref_task_tag);
 	tmr->response = TMR_TASK_DOES_NOT_EXIST;
@@ -242,33 +223,13 @@ static void core_tmr_drain_tmr_list(
 			continue;
 
 		spin_lock(&sess->sess_cmd_lock);
-		spin_lock(&cmd->t_state_lock);
-		if (!(cmd->transport_state & CMD_T_ACTIVE) ||
-		     (cmd->transport_state & CMD_T_FABRIC_STOP)) {
-			spin_unlock(&cmd->t_state_lock);
-			spin_unlock(&sess->sess_cmd_lock);
-			continue;
-		}
-		if (cmd->t_state == TRANSPORT_ISTATE_PROCESSING) {
-			spin_unlock(&cmd->t_state_lock);
-			spin_unlock(&sess->sess_cmd_lock);
-			continue;
-		}
-		if (sess->sess_tearing_down || cmd->cmd_wait_set) {
-			spin_unlock(&cmd->t_state_lock);
-			spin_unlock(&sess->sess_cmd_lock);
-			continue;
-		}
-		cmd->transport_state |= CMD_T_ABORTED;
-		spin_unlock(&cmd->t_state_lock);
+		rc = __target_check_io_state(cmd);
+		spin_unlock(&sess->sess_cmd_lock);
 
-		rc = kref_get_unless_zero(&cmd->cmd_kref);
 		if (!rc) {
 			printk("LUN_RESET TMR: non-zero kref_get_unless_zero\n");
-			spin_unlock(&sess->sess_cmd_lock);
 			continue;
 		}
-		spin_unlock(&sess->sess_cmd_lock);
 
 		list_move_tail(&tmr_p->tmr_list, &drain_tmr_list);
 	}
@@ -283,14 +244,31 @@ static void core_tmr_drain_tmr_list(
 			(preempt_and_abort_list) ? "Preempt" : "", tmr_p,
 			tmr_p->function, tmr_p->response, cmd->t_state);
 
-		cancel_work_sync(&cmd->work);
-		transport_wait_for_tasks(cmd);
-
-		transport_cmd_finish_abort(cmd, 1);
+		while (!wait_for_completion_timeout(&cmd->finished, 180 * HZ))
+			pr_debug("LUN RESET: still waiting for ITT %#llx\n",
+				 cmd->tag);
 		target_put_sess_cmd(cmd);
 	}
 }
 
+/**
+ * core_tmr_drain_state_list() - Abort SCSI commands associated with a device.
+ *
+ * @dev:       Device for which to abort outstanding SCSI commands.
+ * @prout_cmd: Pointer to the SCSI PREEMPT AND ABORT if this function is called
+ *             to realize the PREEMPT AND ABORT functionality.
+ * @tmr_sess:  Session through which the LUN RESET has been received.
+ * @tas:       Task Aborted Status (TAS) bit from the SCSI control mode page.
+ *             A quote from SPC-4, paragraph "7.5.10 Control mode page":
+ *             "A task aborted status (TAS) bit set to zero specifies that
+ *             aborted commands shall be terminated by the device server
+ *             without any response to the application client. A TAS bit set
+ *             to one specifies that commands aborted by the actions of an I_T
+ *             nexus other than the I_T nexus on which the command was
+ *             received shall be completed with TASK ABORTED status."
+ * @preempt_and_abort_list: For the PREEMPT AND ABORT functionality, a list
+ *             with registrations that will be preempted.
+ */
 static void core_tmr_drain_state_list(
 	struct se_device *dev,
 	struct se_cmd *prout_cmd,
@@ -299,6 +277,7 @@ static void core_tmr_drain_state_list(
 	struct list_head *preempt_and_abort_list)
 {
 	LIST_HEAD(drain_task_list);
+	struct se_node_acl *tmr_nacl = tmr_sess ? tmr_sess->se_node_acl : NULL;
 	struct se_session *sess;
 	struct se_cmd *cmd, *next;
 	unsigned long flags;
@@ -328,6 +307,10 @@ static void core_tmr_drain_state_list(
 	 */
 	spin_lock_irqsave(&dev->execute_task_lock, flags);
 	list_for_each_entry_safe(cmd, next, &dev->state_list, state_list) {
+		/* Skip task management functions. */
+		if (cmd->se_cmd_flags & SCF_SCSI_TMR_CDB)
+			continue;
+
 		/*
 		 * For PREEMPT_AND_ABORT usage, only process commands
 		 * with a matching reservation key.
@@ -346,13 +329,15 @@ static void core_tmr_drain_state_list(
 			continue;
 
 		spin_lock(&sess->sess_cmd_lock);
-		rc = __target_check_io_state(cmd, tmr_sess, tas);
+		rc = __target_check_io_state(cmd);
 		spin_unlock(&sess->sess_cmd_lock);
 		if (!rc)
 			continue;
 
 		list_move_tail(&cmd->state_list, &drain_task_list);
 		cmd->state_active = false;
+		if (tmr_nacl && tmr_nacl != cmd->se_sess->se_node_acl && tas)
+			cmd->send_abort_response = true;
 	}
 	spin_unlock_irqrestore(&dev->execute_task_lock, flags);
 
@@ -375,17 +360,9 @@ static void core_tmr_drain_state_list(
 			(cmd->transport_state & CMD_T_STOP) != 0,
 			(cmd->transport_state & CMD_T_SENT) != 0);
 
-		/*
-		 * If the command may be queued onto a workqueue cancel it now.
-		 *
-		 * This is equivalent to removal from the execute queue in the
-		 * loop above, but we do it down here given that
-		 * cancel_work_sync may block.
-		 */
-		cancel_work_sync(&cmd->work);
-		transport_wait_for_tasks(cmd);
-
-		core_tmr_handle_tas_abort(cmd, tas);
+		while (!wait_for_completion_timeout(&cmd->finished, 180 * HZ))
+			pr_debug("LUN RESET: still waiting for cmd with ITT %#llx\n",
+				 cmd->tag);
 		target_put_sess_cmd(cmd);
 	}
 }
