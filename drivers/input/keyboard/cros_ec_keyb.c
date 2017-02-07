@@ -222,14 +222,15 @@ static int cros_ec_keyb_probe(struct platform_device *pdev)
 	struct device_node *np;
 	int err;
 
-	np = pdev->dev.of_node;
+	np = dev->of_node;
 	if (!np)
 		return -ENODEV;
 
 	ckdev = devm_kzalloc(dev, sizeof(*ckdev), GFP_KERNEL);
 	if (!ckdev)
 		return -ENOMEM;
-	err = matrix_keypad_parse_of_params(dev, &ckdev->rows, &ckdev->cols);
+
+	err = matrix_keypad_parse_properties(dev, &ckdev->rows, &ckdev->cols);
 	if (err)
 		return err;
 
@@ -248,7 +249,6 @@ static int cros_ec_keyb_probe(struct platform_device *pdev)
 	ckdev->ec = ec;
 	ckdev->notifier.notifier_call = cros_ec_keyb_work;
 	ckdev->dev = dev;
-	dev_set_drvdata(dev, ckdev);
 
 	idev->name = CROS_EC_DEV_NAME;
 	idev->phys = ec->phys_name;
