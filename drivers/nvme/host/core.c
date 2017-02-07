@@ -208,18 +208,18 @@ EXPORT_SYMBOL_GPL(nvme_requeue_req);
 struct request *nvme_alloc_request(struct request_queue *q,
 		struct nvme_command *cmd, unsigned int flags, int qid)
 {
+	unsigned op = nvme_is_write(cmd) ? REQ_OP_DRV_OUT : REQ_OP_DRV_IN;
 	struct request *req;
 
 	if (qid == NVME_QID_ANY) {
-		req = blk_mq_alloc_request(q, nvme_is_write(cmd), flags);
+		req = blk_mq_alloc_request(q, op, flags);
 	} else {
-		req = blk_mq_alloc_request_hctx(q, nvme_is_write(cmd), flags,
+		req = blk_mq_alloc_request_hctx(q, op, flags,
 				qid ? qid - 1 : 0);
 	}
 	if (IS_ERR(req))
 		return req;
 
-	req->cmd_type = REQ_TYPE_DRV_PRIV;
 	req->cmd_flags |= REQ_FAILFAST_DRIVER;
 	nvme_req(req)->cmd = cmd;
 
@@ -309,17 +309,27 @@ int nvme_setup_cmd(struct nvme_ns *ns, struct request *req,
 {
 	int ret = BLK_MQ_RQ_QUEUE_OK;
 
-	if (req->cmd_type == REQ_TYPE_DRV_PRIV)
+	switch (req_op(req)) {
+	case REQ_OP_DRV_IN:
+	case REQ_OP_DRV_OUT:
 		memcpy(cmd, nvme_req(req)->cmd, sizeof(*cmd));
-	else if (req_op(req) == REQ_OP_FLUSH)
+		break;
+	case REQ_OP_FLUSH:
 		nvme_setup_flush(ns, cmd);
-	else if (req_op(req) == REQ_OP_DISCARD)
+		break;
+	case REQ_OP_DISCARD:
 		ret = nvme_setup_discard(ns, req, cmd);
-	else
+		break;
+	case REQ_OP_READ:
+	case REQ_OP_WRITE:
 		nvme_setup_rw(ns, req, cmd);
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		return BLK_MQ_RQ_QUEUE_ERROR;
+	}
 
 	cmd->common.command_id = req->tag;
-
 	return ret;
 }
 EXPORT_SYMBOL_GPL(nvme_setup_cmd);
@@ -784,6 +794,12 @@ static int nvme_ioctl(struct block_device *bdev, fmode_t mode,
 		return nvme_sg_io(ns, (void __user *)arg);
 #endif
 	default:
+#ifdef CONFIG_NVM
+		if (ns->ndev)
+			return nvme_nvm_ioctl(ns, cmd, arg);
+#endif
+		if (is_sed_ioctl(cmd))
+			return sed_ioctl(&ns->ctrl->opal_dev, cmd, arg);
 		return -ENOTTY;
 	}
 }
@@ -1050,6 +1066,29 @@ static const struct pr_ops nvme_pr_ops = {
 	.pr_preempt	= nvme_pr_preempt,
 	.pr_clear	= nvme_pr_clear,
 };
+
+#ifdef CONFIG_BLK_SED_OPAL
+int nvme_sec_submit(struct opal_dev *dev, u16 spsp, u8 secp,
+		    void *buffer, size_t len, bool send)
+{
+	struct nvme_command cmd;
+	struct nvme_ctrl *ctrl = NULL;
+
+	memset(&cmd, 0, sizeof(cmd));
+	if (send)
+		cmd.common.opcode = nvme_admin_security_send;
+	else
+		cmd.common.opcode = nvme_admin_security_recv;
+	ctrl = container_of(dev, struct nvme_ctrl, opal_dev);
+	cmd.common.nsid = 0;
+	cmd.common.cdw10[0] = cpu_to_le32(((u32)secp) << 24 | ((u32)spsp) << 8);
+	cmd.common.cdw10[1] = cpu_to_le32(len);
+
+	return __nvme_submit_sync_cmd(ctrl->admin_q, &cmd, NULL, buffer, len,
+				      ADMIN_TIMEOUT, NVME_QID_ANY, 1, 0);
+}
+EXPORT_SYMBOL_GPL(nvme_sec_submit);
+#endif /* CONFIG_BLK_SED_OPAL */
 
 static const struct block_device_operations nvme_fops = {
 	.owner		= THIS_MODULE,

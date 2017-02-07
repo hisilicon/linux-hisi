@@ -89,7 +89,7 @@ queue_requests_store(struct request_queue *q, const char *page, size_t count)
 
 static ssize_t queue_ra_show(struct request_queue *q, char *page)
 {
-	unsigned long ra_kb = q->backing_dev_info.ra_pages <<
+	unsigned long ra_kb = q->backing_dev_info->ra_pages <<
 					(PAGE_SHIFT - 10);
 
 	return queue_var_show(ra_kb, (page));
@@ -104,7 +104,7 @@ queue_ra_store(struct request_queue *q, const char *page, size_t count)
 	if (ret < 0)
 		return ret;
 
-	q->backing_dev_info.ra_pages = ra_kb >> (PAGE_SHIFT - 10);
+	q->backing_dev_info->ra_pages = ra_kb >> (PAGE_SHIFT - 10);
 
 	return ret;
 }
@@ -236,7 +236,7 @@ queue_max_sectors_store(struct request_queue *q, const char *page, size_t count)
 
 	spin_lock_irq(q->queue_lock);
 	q->limits.max_sectors = max_sectors_kb << 1;
-	q->backing_dev_info.io_pages = max_sectors_kb >> (PAGE_SHIFT - 10);
+	q->backing_dev_info->io_pages = max_sectors_kb >> (PAGE_SHIFT - 10);
 	spin_unlock_irq(q->queue_lock);
 
 	return ret;
@@ -799,7 +799,7 @@ static void blk_release_queue(struct kobject *kobj)
 		container_of(kobj, struct request_queue, kobj);
 
 	wbt_exit(q);
-	bdi_exit(&q->backing_dev_info);
+	bdi_put(q->backing_dev_info);
 	blkcg_exit_queue(q);
 
 	if (q->elevator) {
@@ -814,12 +814,18 @@ static void blk_release_queue(struct kobject *kobj)
 	if (q->queue_tags)
 		__blk_queue_free_tags(q);
 
-	if (!q->mq_ops)
+	if (!q->mq_ops) {
+		if (q->exit_rq_fn)
+			q->exit_rq_fn(q, q->fq->flush_rq);
 		blk_free_flush_queue(q->fq);
-	else
+	} else {
 		blk_mq_release(q);
+	}
 
 	blk_trace_shutdown(q);
+
+	if (q->mq_ops)
+		blk_mq_debugfs_unregister(q);
 
 	if (q->bio_split)
 		bioset_free(q->bio_split);
@@ -897,16 +903,15 @@ int blk_register_queue(struct gendisk *disk)
 
 	blk_wb_init(q);
 
-	if (!q->request_fn)
-		return 0;
-
-	ret = elv_register_queue(q);
-	if (ret) {
-		kobject_uevent(&q->kobj, KOBJ_REMOVE);
-		kobject_del(&q->kobj);
-		blk_trace_remove_sysfs(dev);
-		kobject_put(&dev->kobj);
-		return ret;
+	if (q->request_fn || (q->mq_ops && q->elevator)) {
+		ret = elv_register_queue(q);
+		if (ret) {
+			kobject_uevent(&q->kobj, KOBJ_REMOVE);
+			kobject_del(&q->kobj);
+			blk_trace_remove_sysfs(dev);
+			kobject_put(&dev->kobj);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -922,7 +927,7 @@ void blk_unregister_queue(struct gendisk *disk)
 	if (q->mq_ops)
 		blk_mq_unregister_dev(disk_to_dev(disk), q);
 
-	if (q->request_fn)
+	if (q->request_fn || (q->mq_ops && q->elevator))
 		elv_unregister_queue(q);
 
 	kobject_uevent(&q->kobj, KOBJ_REMOVE);
