@@ -1,7 +1,7 @@
 /*
  * drivers/net/ethernet/mellanox/mlxsw/spectrum.h
- * Copyright (c) 2015 Mellanox Technologies. All rights reserved.
- * Copyright (c) 2015 Jiri Pirko <jiri@mellanox.com>
+ * Copyright (c) 2015-2017 Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2015-2017 Jiri Pirko <jiri@mellanox.com>
  * Copyright (c) 2015 Ido Schimmel <idosch@mellanox.com>
  * Copyright (c) 2015 Elad Raz <eladr@mellanox.com>
  *
@@ -46,9 +46,13 @@
 #include <linux/dcbnl.h>
 #include <linux/in6.h>
 #include <linux/notifier.h>
+#include <net/psample.h>
+#include <net/pkt_cls.h>
 
 #include "port.h"
 #include "core.h"
+#include "core_acl_flex_keys.h"
+#include "core_acl_flex_actions.h"
 
 #define MLXSW_SP_VFID_BASE VLAN_N_VID
 #define MLXSW_SP_VFID_MAX 6656	/* Bridged VLAN interfaces */
@@ -229,6 +233,7 @@ struct mlxsw_sp_span_entry {
 
 enum mlxsw_sp_port_mall_action_type {
 	MLXSW_SP_PORT_MALL_MIRROR,
+	MLXSW_SP_PORT_MALL_SAMPLE,
 };
 
 struct mlxsw_sp_port_mall_mirror_tc_entry {
@@ -260,6 +265,8 @@ struct mlxsw_sp_router {
 	bool aborted;
 };
 
+struct mlxsw_sp_acl;
+
 struct mlxsw_sp {
 	struct {
 		struct list_head list;
@@ -289,6 +296,7 @@ struct mlxsw_sp {
 	u8 port_to_module[MLXSW_PORT_MAX_PORTS];
 	struct mlxsw_sp_sb sb;
 	struct mlxsw_sp_router router;
+	struct mlxsw_sp_acl *acl;
 	struct {
 		DECLARE_BITMAP(usage, MLXSW_SP_KVD_LINEAR_SIZE);
 	} kvdl;
@@ -313,6 +321,13 @@ struct mlxsw_sp_port_pcpu_stats {
 	u64			tx_bytes;
 	struct u64_stats_sync	syncp;
 	u32			tx_dropped;
+};
+
+struct mlxsw_sp_port_sample {
+	struct psample_group __rcu *psample_group;
+	u32 trunc_size;
+	u32 rate;
+	bool truncate;
 };
 
 struct mlxsw_sp_port {
@@ -361,8 +376,10 @@ struct mlxsw_sp_port {
 		struct rtnl_link_stats64 *cache;
 		struct delayed_work update_dw;
 	} hw_stats;
+	struct mlxsw_sp_port_sample *sample;
 };
 
+bool mlxsw_sp_port_dev_check(const struct net_device *dev);
 struct mlxsw_sp_port *mlxsw_sp_port_lower_dev_hold(struct net_device *dev);
 void mlxsw_sp_port_dev_put(struct mlxsw_sp_port *mlxsw_sp_port);
 
@@ -582,14 +599,105 @@ static inline void mlxsw_sp_port_dcb_fini(struct mlxsw_sp_port *mlxsw_sp_port)
 
 int mlxsw_sp_router_init(struct mlxsw_sp *mlxsw_sp);
 void mlxsw_sp_router_fini(struct mlxsw_sp *mlxsw_sp);
-int mlxsw_sp_router_neigh_construct(struct net_device *dev,
-				    struct neighbour *n);
-void mlxsw_sp_router_neigh_destroy(struct net_device *dev,
-				   struct neighbour *n);
 int mlxsw_sp_router_netevent_event(struct notifier_block *unused,
 				   unsigned long event, void *ptr);
 
 int mlxsw_sp_kvdl_alloc(struct mlxsw_sp *mlxsw_sp, unsigned int entry_count);
 void mlxsw_sp_kvdl_free(struct mlxsw_sp *mlxsw_sp, int entry_index);
+
+struct mlxsw_afk *mlxsw_sp_acl_afk(struct mlxsw_sp_acl *acl);
+
+struct mlxsw_sp_acl_rule_info {
+	unsigned int priority;
+	struct mlxsw_afk_element_values values;
+	struct mlxsw_afa_block *act_block;
+};
+
+enum mlxsw_sp_acl_profile {
+	MLXSW_SP_ACL_PROFILE_FLOWER,
+};
+
+struct mlxsw_sp_acl_profile_ops {
+	size_t ruleset_priv_size;
+	int (*ruleset_add)(struct mlxsw_sp *mlxsw_sp,
+			   void *priv, void *ruleset_priv);
+	void (*ruleset_del)(struct mlxsw_sp *mlxsw_sp, void *ruleset_priv);
+	int (*ruleset_bind)(struct mlxsw_sp *mlxsw_sp, void *ruleset_priv,
+			    struct net_device *dev, bool ingress);
+	void (*ruleset_unbind)(struct mlxsw_sp *mlxsw_sp, void *ruleset_priv);
+	size_t rule_priv_size;
+	int (*rule_add)(struct mlxsw_sp *mlxsw_sp,
+			void *ruleset_priv, void *rule_priv,
+			struct mlxsw_sp_acl_rule_info *rulei);
+	void (*rule_del)(struct mlxsw_sp *mlxsw_sp, void *rule_priv);
+};
+
+struct mlxsw_sp_acl_ops {
+	size_t priv_size;
+	int (*init)(struct mlxsw_sp *mlxsw_sp, void *priv);
+	void (*fini)(struct mlxsw_sp *mlxsw_sp, void *priv);
+	const struct mlxsw_sp_acl_profile_ops *
+			(*profile_ops)(struct mlxsw_sp *mlxsw_sp,
+				       enum mlxsw_sp_acl_profile profile);
+};
+
+struct mlxsw_sp_acl_ruleset;
+
+struct mlxsw_sp_acl_ruleset *
+mlxsw_sp_acl_ruleset_get(struct mlxsw_sp *mlxsw_sp,
+			 struct net_device *dev, bool ingress,
+			 enum mlxsw_sp_acl_profile profile);
+void mlxsw_sp_acl_ruleset_put(struct mlxsw_sp *mlxsw_sp,
+			      struct mlxsw_sp_acl_ruleset *ruleset);
+
+struct mlxsw_sp_acl_rule_info *
+mlxsw_sp_acl_rulei_create(struct mlxsw_sp_acl *acl);
+void mlxsw_sp_acl_rulei_destroy(struct mlxsw_sp_acl_rule_info *rulei);
+int mlxsw_sp_acl_rulei_commit(struct mlxsw_sp_acl_rule_info *rulei);
+void mlxsw_sp_acl_rulei_priority(struct mlxsw_sp_acl_rule_info *rulei,
+				 unsigned int priority);
+void mlxsw_sp_acl_rulei_keymask_u32(struct mlxsw_sp_acl_rule_info *rulei,
+				    enum mlxsw_afk_element element,
+				    u32 key_value, u32 mask_value);
+void mlxsw_sp_acl_rulei_keymask_buf(struct mlxsw_sp_acl_rule_info *rulei,
+				    enum mlxsw_afk_element element,
+				    const char *key_value,
+				    const char *mask_value, unsigned int len);
+void mlxsw_sp_acl_rulei_act_continue(struct mlxsw_sp_acl_rule_info *rulei);
+void mlxsw_sp_acl_rulei_act_jump(struct mlxsw_sp_acl_rule_info *rulei,
+				 u16 group_id);
+int mlxsw_sp_acl_rulei_act_drop(struct mlxsw_sp_acl_rule_info *rulei);
+int mlxsw_sp_acl_rulei_act_fwd(struct mlxsw_sp *mlxsw_sp,
+			       struct mlxsw_sp_acl_rule_info *rulei,
+			       struct net_device *out_dev);
+
+struct mlxsw_sp_acl_rule;
+
+struct mlxsw_sp_acl_rule *
+mlxsw_sp_acl_rule_create(struct mlxsw_sp *mlxsw_sp,
+			 struct mlxsw_sp_acl_ruleset *ruleset,
+			 unsigned long cookie);
+void mlxsw_sp_acl_rule_destroy(struct mlxsw_sp *mlxsw_sp,
+			       struct mlxsw_sp_acl_rule *rule);
+int mlxsw_sp_acl_rule_add(struct mlxsw_sp *mlxsw_sp,
+			  struct mlxsw_sp_acl_rule *rule);
+void mlxsw_sp_acl_rule_del(struct mlxsw_sp *mlxsw_sp,
+			   struct mlxsw_sp_acl_rule *rule);
+struct mlxsw_sp_acl_rule *
+mlxsw_sp_acl_rule_lookup(struct mlxsw_sp *mlxsw_sp,
+			 struct mlxsw_sp_acl_ruleset *ruleset,
+			 unsigned long cookie);
+struct mlxsw_sp_acl_rule_info *
+mlxsw_sp_acl_rule_rulei(struct mlxsw_sp_acl_rule *rule);
+
+int mlxsw_sp_acl_init(struct mlxsw_sp *mlxsw_sp);
+void mlxsw_sp_acl_fini(struct mlxsw_sp *mlxsw_sp);
+
+extern const struct mlxsw_sp_acl_ops mlxsw_sp_acl_tcam_ops;
+
+int mlxsw_sp_flower_replace(struct mlxsw_sp_port *mlxsw_sp_port, bool ingress,
+			    __be16 protocol, struct tc_cls_flower_offload *f);
+void mlxsw_sp_flower_destroy(struct mlxsw_sp_port *mlxsw_sp_port, bool ingress,
+			     struct tc_cls_flower_offload *f);
 
 #endif

@@ -23,12 +23,12 @@
 #include <linux/virtio.h>
 #include <linux/virtio_net.h>
 #include <linux/bpf.h>
+#include <linux/bpf_trace.h>
 #include <linux/scatterlist.h>
 #include <linux/if_vlan.h>
 #include <linux/slab.h>
 #include <linux/cpu.h>
 #include <linux/average.h>
-#include <net/busy_poll.h>
 
 static int napi_weight = NAPI_POLL_WEIGHT;
 module_param(napi_weight, int, 0444);
@@ -338,7 +338,7 @@ static struct sk_buff *page_to_skb(struct virtnet_info *vi,
 	return skb;
 }
 
-static void virtnet_xdp_xmit(struct virtnet_info *vi,
+static bool virtnet_xdp_xmit(struct virtnet_info *vi,
 			     struct receive_queue *rq,
 			     struct send_queue *sq,
 			     struct xdp_buff *xdp,
@@ -390,10 +390,12 @@ static void virtnet_xdp_xmit(struct virtnet_info *vi,
 			put_page(page);
 		} else /* small buffer */
 			kfree_skb(data);
-		return; // On error abort to avoid unnecessary kick
+		/* On error abort to avoid unnecessary kick */
+		return false;
 	}
 
 	virtqueue_kick(sq->vq);
+	return true;
 }
 
 static u32 do_xdp_prog(struct virtnet_info *vi,
@@ -429,11 +431,14 @@ static u32 do_xdp_prog(struct virtnet_info *vi,
 			vi->xdp_queue_pairs +
 			smp_processor_id();
 		xdp.data = buf;
-		virtnet_xdp_xmit(vi, rq, &vi->sq[qp], &xdp, data);
+		if (unlikely(!virtnet_xdp_xmit(vi, rq, &vi->sq[qp], &xdp,
+					       data)))
+			trace_xdp_exception(vi->dev, xdp_prog, act);
 		return XDP_TX;
 	default:
 		bpf_warn_invalid_xdp_action(act);
 	case XDP_ABORTED:
+		trace_xdp_exception(vi->dev, xdp_prog, act);
 	case XDP_DROP:
 		return XDP_DROP;
 	}
@@ -1007,53 +1012,17 @@ static int virtnet_poll(struct napi_struct *napi, int budget)
 	/* Out of packets? */
 	if (received < budget) {
 		r = virtqueue_enable_cb_prepare(rq->vq);
-		napi_complete_done(napi, received);
-		if (unlikely(virtqueue_poll(rq->vq, r)) &&
-		    napi_schedule_prep(napi)) {
-			virtqueue_disable_cb(rq->vq);
-			__napi_schedule(napi);
+		if (napi_complete_done(napi, received)) {
+			if (unlikely(virtqueue_poll(rq->vq, r)) &&
+			    napi_schedule_prep(napi)) {
+				virtqueue_disable_cb(rq->vq);
+				__napi_schedule(napi);
+			}
 		}
 	}
 
 	return received;
 }
-
-#ifdef CONFIG_NET_RX_BUSY_POLL
-/* must be called with local_bh_disable()d */
-static int virtnet_busy_poll(struct napi_struct *napi)
-{
-	struct receive_queue *rq =
-		container_of(napi, struct receive_queue, napi);
-	struct virtnet_info *vi = rq->vq->vdev->priv;
-	int r, received = 0, budget = 4;
-
-	if (!(vi->status & VIRTIO_NET_S_LINK_UP))
-		return LL_FLUSH_FAILED;
-
-	if (!napi_schedule_prep(napi))
-		return LL_FLUSH_BUSY;
-
-	virtqueue_disable_cb(rq->vq);
-
-again:
-	received += virtnet_receive(rq, budget);
-
-	r = virtqueue_enable_cb_prepare(rq->vq);
-	clear_bit(NAPI_STATE_SCHED, &napi->state);
-	if (unlikely(virtqueue_poll(rq->vq, r)) &&
-	    napi_schedule_prep(napi)) {
-		virtqueue_disable_cb(rq->vq);
-		if (received < budget) {
-			budget -= received;
-			goto again;
-		} else {
-			__napi_schedule(napi);
-		}
-	}
-
-	return received;
-}
-#endif	/* CONFIG_NET_RX_BUSY_POLL */
 
 static int virtnet_open(struct net_device *dev)
 {
@@ -1244,10 +1213,9 @@ static int virtnet_set_mac_address(struct net_device *dev, void *p)
 	struct sockaddr *addr;
 	struct scatterlist sg;
 
-	addr = kmalloc(sizeof(*addr), GFP_KERNEL);
+	addr = kmemdup(p, sizeof(*addr), GFP_KERNEL);
 	if (!addr)
 		return -ENOMEM;
-	memcpy(addr, p, sizeof(*addr));
 
 	ret = eth_prepare_mac_addr_change(dev, addr);
 	if (ret)
@@ -1281,8 +1249,8 @@ out:
 	return ret;
 }
 
-static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
-					       struct rtnl_link_stats64 *tot)
+static void virtnet_stats(struct net_device *dev,
+			  struct rtnl_link_stats64 *tot)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
 	int cpu;
@@ -1315,8 +1283,6 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
 	tot->rx_dropped = dev->stats.rx_dropped;
 	tot->rx_length_errors = dev->stats.rx_length_errors;
 	tot->rx_frame_errors = dev->stats.rx_frame_errors;
-
-	return tot;
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -1813,9 +1779,6 @@ static const struct net_device_ops virtnet_netdev = {
 	.ndo_vlan_rx_kill_vid = virtnet_vlan_rx_kill_vid,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = virtnet_netpoll,
-#endif
-#ifdef CONFIG_NET_RX_BUSY_POLL
-	.ndo_busy_poll		= virtnet_busy_poll,
 #endif
 	.ndo_xdp		= virtnet_xdp,
 };

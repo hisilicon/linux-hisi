@@ -42,6 +42,7 @@
  */
 
 #include <linux/bpf.h>
+#include <linux/bpf_trace.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -1459,7 +1460,7 @@ nfp_net_rx_drop(struct nfp_net_r_vector *r_vec, struct nfp_net_rx_ring *rx_ring,
 		dev_kfree_skb_any(skb);
 }
 
-static void
+static bool
 nfp_net_tx_xdp_buf(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring,
 		   struct nfp_net_tx_ring *tx_ring,
 		   struct nfp_net_rx_buf *rxbuf, unsigned int pkt_off,
@@ -1473,13 +1474,13 @@ nfp_net_tx_xdp_buf(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring,
 
 	if (unlikely(nfp_net_tx_full(tx_ring, 1))) {
 		nfp_net_rx_drop(rx_ring->r_vec, rx_ring, rxbuf, NULL);
-		return;
+		return false;
 	}
 
 	new_frag = nfp_net_napi_alloc_one(nn, DMA_BIDIRECTIONAL, &new_dma_addr);
 	if (unlikely(!new_frag)) {
 		nfp_net_rx_drop(rx_ring->r_vec, rx_ring, rxbuf, NULL);
-		return;
+		return false;
 	}
 	nfp_net_rx_give_one(rx_ring, new_frag, new_dma_addr);
 
@@ -1509,6 +1510,7 @@ nfp_net_tx_xdp_buf(struct nfp_net *nn, struct nfp_net_rx_ring *rx_ring,
 
 	tx_ring->wr_p++;
 	tx_ring->wr_ptr_add++;
+	return true;
 }
 
 static int nfp_net_run_xdp(struct bpf_prog *prog, void *data, unsigned int len)
@@ -1613,12 +1615,15 @@ static int nfp_net_rx(struct nfp_net_rx_ring *rx_ring, int budget)
 			case XDP_PASS:
 				break;
 			case XDP_TX:
-				nfp_net_tx_xdp_buf(nn, rx_ring, tx_ring, rxbuf,
-						   pkt_off, pkt_len);
+				if (unlikely(!nfp_net_tx_xdp_buf(nn, rx_ring,
+								 tx_ring, rxbuf,
+								 pkt_off, pkt_len)))
+					trace_xdp_exception(nn->netdev, xdp_prog, act);
 				continue;
 			default:
 				bpf_warn_invalid_xdp_action(act);
 			case XDP_ABORTED:
+				trace_xdp_exception(nn->netdev, xdp_prog, act);
 			case XDP_DROP:
 				nfp_net_rx_give_one(rx_ring, rxbuf->frag,
 						    rxbuf->dma_addr);
@@ -2638,8 +2643,8 @@ static int nfp_net_change_mtu(struct net_device *netdev, int new_mtu)
 	return nfp_net_ring_reconfig(nn, &nn->xdp_prog, &rx, NULL);
 }
 
-static struct rtnl_link_stats64 *nfp_net_stat64(struct net_device *netdev,
-						struct rtnl_link_stats64 *stats)
+static void nfp_net_stat64(struct net_device *netdev,
+			   struct rtnl_link_stats64 *stats)
 {
 	struct nfp_net *nn = netdev_priv(netdev);
 	int r;
@@ -2669,8 +2674,6 @@ static struct rtnl_link_stats64 *nfp_net_stat64(struct net_device *netdev,
 		stats->tx_bytes += data[1];
 		stats->tx_errors += data[2];
 	}
-
-	return stats;
 }
 
 static bool nfp_net_ebpf_capable(struct nfp_net *nn)
