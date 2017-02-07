@@ -43,7 +43,7 @@ static int gpio_mockup_ranges[MAX_GC << 1];
 static int gpio_mockup_params_nr;
 module_param_array(gpio_mockup_ranges, int, &gpio_mockup_params_nr, 0400);
 
-const char pins_name_start = 'A';
+static const char pins_name_start = 'A';
 
 static int mockup_gpio_get(struct gpio_chip *gc, unsigned int offset)
 {
@@ -120,13 +120,10 @@ err:
 
 static int mockup_gpio_probe(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
 	struct mockup_gpio_controller *cntr;
-	int ret;
-	int i;
-	int base;
-	int ngpio;
-	char chip_name[sizeof(GPIO_NAME) + 3];
+	struct device *dev = &pdev->dev;
+	int ret, i, base, ngpio;
+	char *chip_name;
 
 	if (gpio_mockup_params_nr < 2)
 		return -EINVAL;
@@ -146,8 +143,12 @@ static int mockup_gpio_probe(struct platform_device *pdev)
 			ngpio = gpio_mockup_ranges[i * 2 + 1] - base;
 
 		if (ngpio >= 0) {
-			sprintf(chip_name, "%s-%c", GPIO_NAME,
-				pins_name_start + i);
+			chip_name = devm_kasprintf(dev, GFP_KERNEL,
+						   "%s-%c", GPIO_NAME,
+						   pins_name_start + i);
+			if (!chip_name)
+				return -ENOMEM;
+
 			ret = mockup_gpio_add(dev, &cntr[i],
 					      chip_name, base, ngpio);
 		} else {
@@ -170,8 +171,8 @@ static int mockup_gpio_probe(struct platform_device *pdev)
 
 static struct platform_driver mockup_gpio_driver = {
 	.driver = {
-		   .name = GPIO_NAME,
-		   },
+		.name = GPIO_NAME,
+	},
 	.probe = mockup_gpio_probe,
 };
 
