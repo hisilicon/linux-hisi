@@ -40,95 +40,11 @@
  */
 #define HV_UTIL_NEGO_TIMEOUT 55
 
-/*
- * The below CPUID leaves are present if VersionAndFeatures.HypervisorPresent
- * is set by CPUID(HVCPUID_VERSION_FEATURES).
- */
-enum hv_cpuid_function {
-	HVCPUID_VERSION_FEATURES		= 0x00000001,
-	HVCPUID_VENDOR_MAXFUNCTION		= 0x40000000,
-	HVCPUID_INTERFACE			= 0x40000001,
 
-	/*
-	 * The remaining functions depend on the value of
-	 * HVCPUID_INTERFACE
-	 */
-	HVCPUID_VERSION			= 0x40000002,
-	HVCPUID_FEATURES			= 0x40000003,
-	HVCPUID_ENLIGHTENMENT_INFO	= 0x40000004,
-	HVCPUID_IMPLEMENTATION_LIMITS		= 0x40000005,
-};
 
-#define  HV_FEATURE_GUEST_CRASH_MSR_AVAILABLE   0x400
 
-#define HV_X64_MSR_CRASH_P0   0x40000100
-#define HV_X64_MSR_CRASH_P1   0x40000101
-#define HV_X64_MSR_CRASH_P2   0x40000102
-#define HV_X64_MSR_CRASH_P3   0x40000103
-#define HV_X64_MSR_CRASH_P4   0x40000104
-#define HV_X64_MSR_CRASH_CTL  0x40000105
-
-#define HV_CRASH_CTL_CRASH_NOTIFY (1ULL << 63)
-
-/* Define version of the synthetic interrupt controller. */
-#define HV_SYNIC_VERSION		(1)
-
-#define HV_ANY_VP			(0xFFFFFFFF)
-
-/* Define synthetic interrupt controller flag constants. */
-#define HV_EVENT_FLAGS_COUNT		(256 * 8)
 #define HV_EVENT_FLAGS_BYTE_COUNT	(256)
 #define HV_EVENT_FLAGS_DWORD_COUNT	(256 / sizeof(u32))
-
-/* Define invalid partition identifier. */
-#define HV_PARTITION_ID_INVALID		((u64)0x0)
-
-/* Define port type. */
-enum hv_port_type {
-	HVPORT_MSG	= 1,
-	HVPORT_EVENT		= 2,
-	HVPORT_MONITOR	= 3
-};
-
-/* Define port information structure. */
-struct hv_port_info {
-	enum hv_port_type port_type;
-	u32 padding;
-	union {
-		struct {
-			u32 target_sint;
-			u32 target_vp;
-			u64 rsvdz;
-		} message_port_info;
-		struct {
-			u32 target_sint;
-			u32 target_vp;
-			u16 base_flag_number;
-			u16 flag_count;
-			u32 rsvdz;
-		} event_port_info;
-		struct {
-			u64 monitor_address;
-			u64 rsvdz;
-		} monitor_port_info;
-	};
-};
-
-struct hv_connection_info {
-	enum hv_port_type port_type;
-	u32 padding;
-	union {
-		struct {
-			u64 rsvdz;
-		} message_connection_info;
-		struct {
-			u64 rsvdz;
-		} event_connection_info;
-		struct {
-			u64 monitor_address;
-		} monitor_connection_info;
-	};
-};
 
 /*
  * Timer configuration register.
@@ -146,18 +62,11 @@ union hv_timer_config {
 	};
 };
 
-/* Define the number of message buffers associated with each port. */
-#define HV_PORT_MESSAGE_BUFFER_COUNT	(16)
 
 /* Define the synthetic interrupt controller event flags format. */
 union hv_synic_event_flags {
 	u8 flags8[HV_EVENT_FLAGS_BYTE_COUNT];
 	u32 flags32[HV_EVENT_FLAGS_DWORD_COUNT];
-};
-
-/* Define the synthetic interrupt flags page layout. */
-struct hv_synic_event_flags_page {
-	union hv_synic_event_flags sintevent_flags[HV_SYNIC_SINT_COUNT];
 };
 
 /* Define SynIC control register. */
@@ -261,6 +170,8 @@ struct hv_monitor_page {
 	u8 rsvdz4[1984];
 };
 
+#define HV_HYPERCALL_PARAM_ALIGN	sizeof(u64)
+
 /* Definition of the hv_post_message hypercall input structure. */
 struct hv_input_post_message {
 	union hv_connection_id connectionid;
@@ -268,56 +179,6 @@ struct hv_input_post_message {
 	u32 message_type;
 	u32 payload_size;
 	u64 payload[HV_MESSAGE_PAYLOAD_QWORD_COUNT];
-};
-
-/*
- * Versioning definitions used for guests reporting themselves to the
- * hypervisor, and visa versa.
- */
-
-/* Version info reported by guest OS's */
-enum hv_guest_os_vendor {
-	HVGUESTOS_VENDOR_MICROSOFT	= 0x0001
-};
-
-enum hv_guest_os_microsoft_ids {
-	HVGUESTOS_MICROSOFT_UNDEFINED	= 0x00,
-	HVGUESTOS_MICROSOFT_MSDOS		= 0x01,
-	HVGUESTOS_MICROSOFT_WINDOWS3X	= 0x02,
-	HVGUESTOS_MICROSOFT_WINDOWS9X	= 0x03,
-	HVGUESTOS_MICROSOFT_WINDOWSNT	= 0x04,
-	HVGUESTOS_MICROSOFT_WINDOWSCE	= 0x05
-};
-
-/*
- * Declare the MSR used to identify the guest OS.
- */
-#define HV_X64_MSR_GUEST_OS_ID	0x40000000
-
-union hv_x64_msr_guest_os_id_contents {
-	u64 as_uint64;
-	struct {
-		u64 build_number:16;
-		u64 service_version:8; /* Service Pack, etc. */
-		u64 minor_version:8;
-		u64 major_version:8;
-		u64 os_id:8; /* enum hv_guest_os_microsoft_ids (if Vendor=MS) */
-		u64 vendor_id:16; /* enum hv_guest_os_vendor */
-	};
-};
-
-/*
- * Declare the MSR used to setup pages used to communicate with the hypervisor.
- */
-#define HV_X64_MSR_HYPERCALL	0x40000001
-
-union hv_x64_msr_hypercall_contents {
-	u64 as_uint64;
-	struct {
-		u64 enable:1;
-		u64 reserved:11;
-		u64 guest_physical_address:52;
-	};
 };
 
 
@@ -331,105 +192,12 @@ enum {
 	VMBUS_MESSAGE_SINT		= 2,
 };
 
-/* #defines */
-
-#define HV_PRESENT_BIT			0x80000000
-
-/*
- * The guest OS needs to register the guest ID with the hypervisor.
- * The guest ID is a 64 bit entity and the structure of this ID is
- * specified in the Hyper-V specification:
- *
- * http://msdn.microsoft.com/en-us/library/windows/hardware/ff542653%28v=vs.85%29.aspx
- *
- * While the current guideline does not specify how Linux guest ID(s)
- * need to be generated, our plan is to publish the guidelines for
- * Linux and other guest operating systems that currently are hosted
- * on Hyper-V. The implementation here conforms to this yet
- * unpublished guidelines.
- *
- *
- * Bit(s)
- * 63 - Indicates if the OS is Open Source or not; 1 is Open Source
- * 62:56 - Os Type; Linux is 0x100
- * 55:48 - Distro specific identification
- * 47:16 - Linux kernel version number
- * 15:0  - Distro specific identification
- *
- *
- */
-
-#define HV_LINUX_VENDOR_ID		0x8100
-
-/*
- * Generate the guest ID based on the guideline described above.
- */
-
-static inline  __u64 generate_guest_id(__u8 d_info1, __u32 kernel_version,
-					__u16 d_info2)
-{
-	__u64 guest_id = 0;
-
-	guest_id = (((__u64)HV_LINUX_VENDOR_ID) << 48);
-	guest_id |= (((__u64)(d_info1)) << 48);
-	guest_id |= (((__u64)(kernel_version)) << 16);
-	guest_id |= ((__u64)(d_info2));
-
-	return guest_id;
-}
-
-
-#define HV_CPU_POWER_MANAGEMENT		(1 << 0)
-#define HV_RECOMMENDATIONS_MAX		4
-
-#define HV_X64_MAX			5
-#define HV_CAPS_MAX			8
-
-
-#define HV_HYPERCALL_PARAM_ALIGN	sizeof(u64)
-
-
-/* Service definitions */
-
-#define HV_SERVICE_PARENT_PORT				(0)
-#define HV_SERVICE_PARENT_CONNECTION			(0)
-
-#define HV_SERVICE_CONNECT_RESPONSE_SUCCESS		(0)
-#define HV_SERVICE_CONNECT_RESPONSE_INVALID_PARAMETER	(1)
-#define HV_SERVICE_CONNECT_RESPONSE_UNKNOWN_SERVICE	(2)
-#define HV_SERVICE_CONNECT_RESPONSE_CONNECTION_REJECTED	(3)
-
-#define HV_SERVICE_CONNECT_REQUEST_MESSAGE_ID		(1)
-#define HV_SERVICE_CONNECT_RESPONSE_MESSAGE_ID		(2)
-#define HV_SERVICE_DISCONNECT_REQUEST_MESSAGE_ID	(3)
-#define HV_SERVICE_DISCONNECT_RESPONSE_MESSAGE_ID	(4)
-#define HV_SERVICE_MAX_MESSAGE_ID				(4)
-
-#define HV_SERVICE_PROTOCOL_VERSION (0x0010)
-#define HV_CONNECT_PAYLOAD_BYTE_COUNT 64
-
-/* #define VMBUS_REVISION_NUMBER	6 */
-
-/* Our local vmbus's port and connection id. Anything >0 is fine */
-/* #define VMBUS_PORT_ID		11 */
-
-/* 628180B8-308D-4c5e-B7DB-1BEB62E62EF4 */
-static const uuid_le VMBUS_SERVICE_ID = {
-	.b = {
-		0xb8, 0x80, 0x81, 0x62, 0x8d, 0x30, 0x5e, 0x4c,
-		0xb7, 0xdb, 0x1b, 0xeb, 0x62, 0xe6, 0x2e, 0xf4
-	},
-};
-
-
-
 struct hv_context {
 	/* We only support running on top of Hyper-V
 	* So at this point this really can only contain the Hyper-V ID
 	*/
 	u64 guestid;
 
-	void *hypercall_page;
 	void *tsc_page;
 
 	bool synic_initialized;
@@ -475,14 +243,6 @@ struct hv_context {
 
 extern struct hv_context hv_context;
 
-struct ms_hyperv_tsc_page {
-	volatile u32 tsc_sequence;
-	u32 reserved1;
-	volatile u64 tsc_scale;
-	volatile s64 tsc_offset;
-	u64 reserved2[509];
-};
-
 struct hv_ring_buffer_debug_info {
 	u32 current_interrupt_mask;
 	u32 current_read_index;
@@ -495,8 +255,6 @@ struct hv_ring_buffer_debug_info {
 
 extern int hv_init(void);
 
-extern void hv_cleanup(bool crash);
-
 extern int hv_post_message(union hv_connection_id connection_id,
 			 enum hv_message_type message_type,
 			 void *payload, size_t payload_size);
@@ -505,19 +263,11 @@ extern int hv_synic_alloc(void);
 
 extern void hv_synic_free(void);
 
-extern void hv_synic_init(void *irqarg);
+extern int hv_synic_init(unsigned int cpu);
 
-extern void hv_synic_cleanup(void *arg);
+extern int hv_synic_cleanup(unsigned int cpu);
 
 extern void hv_synic_clockevents_cleanup(void);
-
-/*
- * Host version information.
- */
-extern unsigned int host_info_eax;
-extern unsigned int host_info_ebx;
-extern unsigned int host_info_ecx;
-extern unsigned int host_info_edx;
 
 /* Interface */
 
@@ -625,41 +375,6 @@ struct vmbus_channel_message_table_entry {
 extern struct vmbus_channel_message_table_entry
 	channel_message_table[CHANNELMSG_COUNT];
 
-/* Free the message slot and signal end-of-message if required */
-static inline void vmbus_signal_eom(struct hv_message *msg, u32 old_msg_type)
-{
-	/*
-	 * On crash we're reading some other CPU's message page and we need
-	 * to be careful: this other CPU may already had cleared the header
-	 * and the host may already had delivered some other message there.
-	 * In case we blindly write msg->header.message_type we're going
-	 * to lose it. We can still lose a message of the same type but
-	 * we count on the fact that there can only be one
-	 * CHANNELMSG_UNLOAD_RESPONSE and we don't care about other messages
-	 * on crash.
-	 */
-	if (cmpxchg(&msg->header.message_type, old_msg_type,
-		    HVMSG_NONE) != old_msg_type)
-		return;
-
-	/*
-	 * Make sure the write to MessageType (ie set to
-	 * HVMSG_NONE) happens before we read the
-	 * MessagePending and EOMing. Otherwise, the EOMing
-	 * will not deliver any more messages since there is
-	 * no empty slot
-	 */
-	mb();
-
-	if (msg->header.message_flags.msg_pending) {
-		/*
-		 * This will cause message queue rescan to
-		 * possibly deliver another msg from the
-		 * hypervisor
-		 */
-		wrmsrl(HV_X64_MSR_EOM, 0);
-	}
-}
 
 /* General vmbus interface */
 
@@ -670,10 +385,6 @@ struct hv_device *vmbus_device_create(const uuid_le *type,
 int vmbus_device_register(struct hv_device *child_device_obj);
 void vmbus_device_unregister(struct hv_device *device_obj);
 
-/* static void */
-/* VmbusChildDeviceDestroy( */
-/* struct hv_device *); */
-
 struct vmbus_channel *relid2channel(u32 relid);
 
 void vmbus_free_channels(void);
@@ -683,7 +394,7 @@ void vmbus_free_channels(void);
 int vmbus_connect(void);
 void vmbus_disconnect(void);
 
-int vmbus_post_msg(void *buffer, size_t buflen);
+int vmbus_post_msg(void *buffer, size_t buflen, bool can_sleep);
 
 void vmbus_on_event(unsigned long data);
 void vmbus_on_msg_dpc(unsigned long data);

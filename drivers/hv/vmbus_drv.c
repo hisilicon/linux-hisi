@@ -54,31 +54,7 @@ static struct acpi_device  *hv_acpi_dev;
 
 static struct completion probe_event;
 
-
-static void hyperv_report_panic(struct pt_regs *regs)
-{
-	static bool panic_reported;
-
-	/*
-	 * We prefer to report panic on 'die' chain as we have proper
-	 * registers to report, but if we miss it (e.g. on BUG()) we need
-	 * to report it on 'panic'.
-	 */
-	if (panic_reported)
-		return;
-	panic_reported = true;
-
-	wrmsrl(HV_X64_MSR_CRASH_P0, regs->ip);
-	wrmsrl(HV_X64_MSR_CRASH_P1, regs->ax);
-	wrmsrl(HV_X64_MSR_CRASH_P2, regs->bx);
-	wrmsrl(HV_X64_MSR_CRASH_P3, regs->cx);
-	wrmsrl(HV_X64_MSR_CRASH_P4, regs->dx);
-
-	/*
-	 * Let Hyper-V know there is crash data available
-	 */
-	wrmsrl(HV_X64_MSR_CRASH_CTL, HV_CRASH_CTL_CRASH_NOTIFY);
-}
+static int hyperv_cpuhp_online;
 
 static int hyperv_panic_event(struct notifier_block *nb, unsigned long val,
 			      void *args)
@@ -986,7 +962,7 @@ static int vmbus_bus_init(void)
 
 	ret = bus_register(&hv_bus);
 	if (ret)
-		goto err_cleanup;
+		return ret;
 
 	hv_setup_vmbus_irq(vmbus_isr);
 
@@ -997,13 +973,15 @@ static int vmbus_bus_init(void)
 	 * Initialize the per-cpu interrupt state and
 	 * connect to the host.
 	 */
-	on_each_cpu(hv_synic_init, NULL, 1);
+	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "x86/hyperv:online",
+				hv_synic_init, hv_synic_cleanup);
+	if (ret < 0)
+		goto err_alloc;
+	hyperv_cpuhp_online = ret;
+
 	ret = vmbus_connect();
 	if (ret)
 		goto err_connect;
-
-	if (vmbus_proto_version > VERSION_WIN7)
-		cpu_hotplug_disable();
 
 	/*
 	 * Only register if the crash MSRs are available
@@ -1019,15 +997,12 @@ static int vmbus_bus_init(void)
 	return 0;
 
 err_connect:
-	on_each_cpu(hv_synic_cleanup, NULL, 1);
+	cpuhp_remove_state(hyperv_cpuhp_online);
 err_alloc:
 	hv_synic_free();
 	hv_remove_vmbus_irq();
 
 	bus_unregister(&hv_bus);
-
-err_cleanup:
-	hv_cleanup(false);
 
 	return ret;
 }
@@ -1478,13 +1453,13 @@ static struct acpi_driver vmbus_acpi_driver = {
 
 static void hv_kexec_handler(void)
 {
-	int cpu;
-
 	hv_synic_clockevents_cleanup();
 	vmbus_initiate_unload(false);
-	for_each_online_cpu(cpu)
-		smp_call_function_single(cpu, hv_synic_cleanup, NULL, 1);
-	hv_cleanup(false);
+	vmbus_connection.conn_state = DISCONNECTED;
+	/* Make sure conn_state is set as hv_synic_cleanup checks for it */
+	mb();
+	cpuhp_remove_state(hyperv_cpuhp_online);
+	hyperv_cleanup();
 };
 
 static void hv_crash_handler(struct pt_regs *regs)
@@ -1495,8 +1470,9 @@ static void hv_crash_handler(struct pt_regs *regs)
 	 * doing the cleanup for current CPU only. This should be sufficient
 	 * for kdump.
 	 */
-	hv_synic_cleanup(NULL);
-	hv_cleanup(true);
+	vmbus_connection.conn_state = DISCONNECTED;
+	hv_synic_cleanup(smp_processor_id());
+	hyperv_cleanup();
 };
 
 static int __init hv_acpi_init(void)
@@ -1556,15 +1532,12 @@ static void __exit vmbus_exit(void)
 						 &hyperv_panic_block);
 	}
 	bus_unregister(&hv_bus);
-	hv_cleanup(false);
 	for_each_online_cpu(cpu) {
 		tasklet_kill(hv_context.event_dpc[cpu]);
-		smp_call_function_single(cpu, hv_synic_cleanup, NULL, 1);
 	}
+	cpuhp_remove_state(hyperv_cpuhp_online);
 	hv_synic_free();
 	acpi_bus_unregister_driver(&vmbus_acpi_driver);
-	if (vmbus_proto_version > VERSION_WIN7)
-		cpu_hotplug_enable();
 }
 
 

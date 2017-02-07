@@ -474,10 +474,14 @@ config SRAM
 	bool "Generic on-chip SRAM driver"
 	depends on HAS_IOMEM
 	select GENERIC_ALLOCATOR
+	select SRAM_EXEC if ARM
 	help
 	  This driver allows you to declare a memory region to be managed by
 	  the genalloc API. It is supposed to be used for small on-chip SRAM
 	  areas found on many SoCs.
+
+config SRAM_EXEC
+	bool
 
 config VEXPRESS_SYSCFG
 	bool "Versatile Express System Configuration driver"
@@ -487,6 +491,7 @@ config VEXPRESS_SYSCFG
 	  ARM Ltd. Versatile Express uses specialised platform configuration
 	  bus. System Configuration interface is one of the possible means
 	  of generating transactions on this bus.
+
 config PANEL
 	tristate "Parallel port LCD/Keypad Panel support"
 	depends on PARPORT

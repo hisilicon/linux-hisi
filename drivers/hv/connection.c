@@ -111,7 +111,8 @@ static int vmbus_negotiate_version(struct vmbus_channel_msginfo *msginfo,
 	spin_unlock_irqrestore(&vmbus_connection.channelmsg_lock, flags);
 
 	ret = vmbus_post_msg(msg,
-			       sizeof(struct vmbus_channel_initiate_contact));
+			     sizeof(struct vmbus_channel_initiate_contact),
+			     true);
 	if (ret != 0) {
 		spin_lock_irqsave(&vmbus_connection.channelmsg_lock, flags);
 		list_del(&msginfo->msglistentry);
@@ -220,11 +221,8 @@ int vmbus_connect(void)
 		goto cleanup;
 
 	vmbus_proto_version = version;
-	pr_info("Hyper-V Host Build:%d-%d.%d-%d-%d.%d; Vmbus version:%d.%d\n",
-		    host_info_eax, host_info_ebx >> 16,
-		    host_info_ebx & 0xFFFF, host_info_ecx,
-		    host_info_edx >> 24, host_info_edx & 0xFFFFFF,
-		    version >> 16, version & 0xFFFF);
+	pr_info("Vmbus version:%d.%d\n",
+		version >> 16, version & 0xFFFF);
 
 	kfree(msginfo);
 	return 0;
@@ -435,7 +433,7 @@ void vmbus_on_event(unsigned long data)
 /*
  * vmbus_post_msg - Send a msg on the vmbus's message connection
  */
-int vmbus_post_msg(void *buffer, size_t buflen)
+int vmbus_post_msg(void *buffer, size_t buflen, bool can_sleep)
 {
 	union hv_connection_id conn_id;
 	int ret = 0;
@@ -450,7 +448,7 @@ int vmbus_post_msg(void *buffer, size_t buflen)
 	 * insufficient resources. Retry the operation a couple of
 	 * times before giving up.
 	 */
-	while (retries < 20) {
+	while (retries < 100) {
 		ret = hv_post_message(conn_id, 1, buffer, buflen);
 
 		switch (ret) {
@@ -473,8 +471,14 @@ int vmbus_post_msg(void *buffer, size_t buflen)
 		}
 
 		retries++;
-		udelay(usec);
-		if (usec < 2048)
+		if (can_sleep && usec > 1000)
+			msleep(usec / 1000);
+		else if (usec < MAX_UDELAY_MS * 1000)
+			udelay(usec);
+		else
+			mdelay(usec / 1000);
+
+		if (usec < 256000)
 			usec *= 2;
 	}
 	return ret;
