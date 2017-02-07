@@ -1940,7 +1940,7 @@ struct cfg80211_deauth_request {
  * struct cfg80211_disassoc_request - Disassociation request data
  *
  * This structure provides information needed to complete IEEE 802.11
- * disassocation.
+ * disassociation.
  *
  * @bss: the BSS to disassociate from
  * @ie: Extra IEs to add to Disassociation frame or %NULL
