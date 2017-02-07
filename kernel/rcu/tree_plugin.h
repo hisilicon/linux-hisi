@@ -1643,7 +1643,7 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 	       "o."[!!(rdp->grpmask & rdp->mynode->qsmaskinit)],
 	       "N."[!!(rdp->grpmask & rdp->mynode->qsmaskinitnext)],
 	       ticks_value, ticks_title,
-	       atomic_read(&rdtp->dynticks) & 0xfff,
+	       rcu_dynticks_snap(rdtp) & 0xfff,
 	       rdtp->dynticks_nesting, rdtp->dynticks_nmi_nesting,
 	       rdp->softirq_snap, kstat_softirqs_cpu(RCU_SOFTIRQ, cpu),
 	       READ_ONCE(rsp->n_force_qs) - rsp->n_force_qs_gpstart,
@@ -1766,6 +1766,7 @@ static void wake_nocb_leader(struct rcu_data *rdp, bool force)
 		return;
 	if (READ_ONCE(rdp_leader->nocb_leader_sleep) || force) {
 		/* Prior smp_mb__after_atomic() orders against prior enqueue. */
+		WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE_NOT);
 		WRITE_ONCE(rdp_leader->nocb_leader_sleep, false);
 		swake_up(&rdp_leader->nocb_wq);
 	}
@@ -1851,14 +1852,18 @@ static void __call_rcu_nocb_enqueue(struct rcu_data *rdp,
 		return;
 	}
 	len = atomic_long_read(&rdp->nocb_q_count);
-	if (old_rhpp == &rdp->nocb_head) {
+	if (old_rhpp == &rdp->nocb_head ||
+	    (rcu_nocb_need_deferred_wakeup(rdp) &&
+	     !irqs_disabled_flags(flags))) {
 		if (!irqs_disabled_flags(flags)) {
 			/* ... if queue was empty ... */
 			wake_nocb_leader(rdp, false);
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 					    TPS("WakeEmpty"));
 		} else {
-			rdp->nocb_defer_wakeup = RCU_NOGP_WAKE;
+			WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE);
+			/* Store ->nocb_defer_wakeup before ->rcu_urgent_qs. */
+			smp_store_release(this_cpu_ptr(&rcu_dynticks.rcu_urgent_qs), true);
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 					    TPS("WakeEmptyIsDeferred"));
 		}
@@ -1870,7 +1875,9 @@ static void __call_rcu_nocb_enqueue(struct rcu_data *rdp,
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 					    TPS("WakeOvf"));
 		} else {
-			rdp->nocb_defer_wakeup = RCU_NOGP_WAKE_FORCE;
+			WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE_FORCE);
+			/* Store ->nocb_defer_wakeup before ->rcu_urgent_qs. */
+			smp_store_release(this_cpu_ptr(&rcu_dynticks.rcu_urgent_qs), true);
 			trace_rcu_nocb_wake(rdp->rsp->name, rdp->cpu,
 					    TPS("WakeOvfIsDeferred"));
 		}
@@ -2196,7 +2203,8 @@ static void do_nocb_deferred_wakeup(struct rcu_data *rdp)
 {
 	int ndw;
 
-	if (!rcu_nocb_need_deferred_wakeup(rdp))
+	if (!rcu_nocb_need_deferred_wakeup(rdp) ||
+	    unlikely(rcu_scheduler_active != RCU_SCHEDULER_RUNNING))
 		return;
 	ndw = READ_ONCE(rdp->nocb_defer_wakeup);
 	WRITE_ONCE(rdp->nocb_defer_wakeup, RCU_NOGP_WAKE_NOT);
@@ -2366,8 +2374,9 @@ static void __init rcu_organize_nocb_kthreads(struct rcu_state *rsp)
 	}
 
 	/*
-	 * Each pass through this loop sets up one rcu_data structure and
-	 * spawns one rcu_nocb_kthread().
+	 * Each pass through this loop sets up one rcu_data structure.
+	 * Should the corresponding CPU come online in the future, then
+	 * we will spawn the needed set of rcu_nocb_kthread() kthreads.
 	 */
 	for_each_cpu(cpu, rcu_nocb_mask) {
 		rdp = per_cpu_ptr(rsp->rda, cpu);

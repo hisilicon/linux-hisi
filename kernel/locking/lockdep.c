@@ -1142,10 +1142,10 @@ print_circular_bug_header(struct lock_list *entry, unsigned int depth,
 		return 0;
 
 	printk("\n");
-	printk("======================================================\n");
-	printk("[ INFO: possible circular locking dependency detected ]\n");
+	pr_warn("======================================================\n");
+	pr_warn("WARNING: possible circular locking dependency detected\n");
 	print_kernel_ident();
-	printk("-------------------------------------------------------\n");
+	pr_warn("------------------------------------------------------\n");
 	printk("%s/%d is trying to acquire lock:\n",
 		curr->comm, task_pid_nr(curr));
 	print_lock(check_src);
@@ -1480,11 +1480,11 @@ print_bad_irq_dependency(struct task_struct *curr,
 		return 0;
 
 	printk("\n");
-	printk("======================================================\n");
-	printk("[ INFO: %s-safe -> %s-unsafe lock order detected ]\n",
+	pr_warn("=====================================================\n");
+	pr_warn("WARNING: %s-safe -> %s-unsafe lock order detected\n",
 		irqclass, irqclass);
 	print_kernel_ident();
-	printk("------------------------------------------------------\n");
+	pr_warn("-----------------------------------------------------\n");
 	printk("%s/%d [HC%u[%lu]:SC%u[%lu]:HE%u:SE%u] is trying to acquire:\n",
 		curr->comm, task_pid_nr(curr),
 		curr->hardirq_context, hardirq_count() >> HARDIRQ_SHIFT,
@@ -1709,10 +1709,10 @@ print_deadlock_bug(struct task_struct *curr, struct held_lock *prev,
 		return 0;
 
 	printk("\n");
-	printk("=============================================\n");
-	printk("[ INFO: possible recursive locking detected ]\n");
+	pr_warn("============================================\n");
+	pr_warn("WARNING: possible recursive locking detected\n");
 	print_kernel_ident();
-	printk("---------------------------------------------\n");
+	pr_warn("--------------------------------------------\n");
 	printk("%s/%d is trying to acquire lock:\n",
 		curr->comm, task_pid_nr(curr));
 	print_lock(next);
@@ -2059,10 +2059,10 @@ static void print_collision(struct task_struct *curr,
 			struct lock_chain *chain)
 {
 	printk("\n");
-	printk("======================\n");
-	printk("[chain_key collision ]\n");
+	pr_warn("============================\n");
+	pr_warn("WARNING: chain_key collision\n");
 	print_kernel_ident();
-	printk("----------------------\n");
+	pr_warn("----------------------------\n");
 	printk("%s/%d: ", current->comm, task_pid_nr(current));
 	printk("Hash chain already cached but the contents don't match!\n");
 
@@ -2358,10 +2358,10 @@ print_usage_bug(struct task_struct *curr, struct held_lock *this,
 		return 0;
 
 	printk("\n");
-	printk("=================================\n");
-	printk("[ INFO: inconsistent lock state ]\n");
+	pr_warn("================================\n");
+	pr_warn("WARNING: inconsistent lock state\n");
 	print_kernel_ident();
-	printk("---------------------------------\n");
+	pr_warn("--------------------------------\n");
 
 	printk("inconsistent {%s} -> {%s} usage.\n",
 		usage_str[prev_bit], usage_str[new_bit]);
@@ -2423,10 +2423,10 @@ print_irq_inversion_bug(struct task_struct *curr,
 		return 0;
 
 	printk("\n");
-	printk("=========================================================\n");
-	printk("[ INFO: possible irq lock inversion dependency detected ]\n");
+	pr_warn("========================================================\n");
+	pr_warn("WARNING: possible irq lock inversion dependency detected\n");
 	print_kernel_ident();
-	printk("---------------------------------------------------------\n");
+	pr_warn("--------------------------------------------------------\n");
 	printk("%s/%d just changed the state of lock:\n",
 		curr->comm, task_pid_nr(curr));
 	print_lock(this);
@@ -3168,10 +3168,10 @@ print_lock_nested_lock_not_held(struct task_struct *curr,
 		return 0;
 
 	printk("\n");
-	printk("==================================\n");
-	printk("[ BUG: Nested lock was not taken ]\n");
+	pr_warn("==================================\n");
+	pr_warn("WARNING: Nested lock was not taken\n");
 	print_kernel_ident();
-	printk("----------------------------------\n");
+	pr_warn("----------------------------------\n");
 
 	printk("%s/%d is trying to lock:\n", curr->comm, task_pid_nr(curr));
 	print_lock(hlock);
@@ -3374,10 +3374,10 @@ print_unlock_imbalance_bug(struct task_struct *curr, struct lockdep_map *lock,
 		return 0;
 
 	printk("\n");
-	printk("=====================================\n");
-	printk("[ BUG: bad unlock balance detected! ]\n");
+	pr_warn("=====================================\n");
+	pr_warn("WARNING: bad unlock balance detected!\n");
 	print_kernel_ident();
-	printk("-------------------------------------\n");
+	pr_warn("-------------------------------------\n");
 	printk("%s/%d is trying to release lock (",
 		curr->comm, task_pid_nr(curr));
 	print_lockdep_cache(lock);
@@ -3871,10 +3871,10 @@ print_lock_contention_bug(struct task_struct *curr, struct lockdep_map *lock,
 		return 0;
 
 	printk("\n");
-	printk("=================================\n");
-	printk("[ BUG: bad contention detected! ]\n");
+	pr_warn("=================================\n");
+	pr_warn("WARNING: bad contention detected!\n");
 	print_kernel_ident();
-	printk("---------------------------------\n");
+	pr_warn("---------------------------------\n");
 	printk("%s/%d is trying to contend lock (",
 		curr->comm, task_pid_nr(curr));
 	print_lockdep_cache(lock);
@@ -4235,10 +4235,10 @@ print_freed_lock_bug(struct task_struct *curr, const void *mem_from,
 		return;
 
 	printk("\n");
-	printk("=========================\n");
-	printk("[ BUG: held lock freed! ]\n");
+	pr_warn("=========================\n");
+	pr_warn("WARNING: held lock freed!\n");
 	print_kernel_ident();
-	printk("-------------------------\n");
+	pr_warn("-------------------------\n");
 	printk("%s/%d is freeing memory %p-%p, with a lock still held there!\n",
 		curr->comm, task_pid_nr(curr), mem_from, mem_to-1);
 	print_lock(hlock);
@@ -4293,11 +4293,11 @@ static void print_held_locks_bug(void)
 		return;
 
 	printk("\n");
-	printk("=====================================\n");
-	printk("[ BUG: %s/%d still has locks held! ]\n",
+	pr_warn("====================================\n");
+	pr_warn("WARNING: %s/%d still has locks held!\n",
 	       current->comm, task_pid_nr(current));
 	print_kernel_ident();
-	printk("-------------------------------------\n");
+	pr_warn("------------------------------------\n");
 	lockdep_print_held_locks(current);
 	printk("\nstack backtrace:\n");
 	dump_stack();
@@ -4362,7 +4362,7 @@ retry:
 	} while_each_thread(g, p);
 
 	printk("\n");
-	printk("=============================================\n\n");
+	pr_warn("=============================================\n\n");
 
 	if (unlock)
 		read_unlock(&tasklist_lock);
@@ -4392,10 +4392,10 @@ asmlinkage __visible void lockdep_sys_exit(void)
 		if (!debug_locks_off())
 			return;
 		printk("\n");
-		printk("================================================\n");
-		printk("[ BUG: lock held when returning to user space! ]\n");
+		pr_warn("================================================\n");
+		pr_warn("WARNING: lock held when returning to user space!\n");
 		print_kernel_ident();
-		printk("------------------------------------------------\n");
+		pr_warn("------------------------------------------------\n");
 		printk("%s/%d is leaving the kernel with locks still held!\n",
 				curr->comm, curr->pid);
 		lockdep_print_held_locks(curr);
@@ -4412,10 +4412,10 @@ void lockdep_rcu_suspicious(const char *file, const int line, const char *s)
 #endif /* #ifdef CONFIG_PROVE_RCU_REPEATEDLY */
 	/* Note: the following can be executed concurrently, so be careful. */
 	printk("\n");
-	printk("===============================\n");
-	printk("[ INFO: suspicious RCU usage. ]\n");
+	pr_warn("=============================\n");
+	pr_warn("WARNING: suspicious RCU usage\n");
 	print_kernel_ident();
-	printk("-------------------------------\n");
+	pr_warn("-----------------------------\n");
 	printk("%s:%d %s!\n", file, line, s);
 	printk("\nother info that might help us debug this:\n\n");
 	printk("\n%srcu_scheduler_active = %d, debug_locks = %d\n",
