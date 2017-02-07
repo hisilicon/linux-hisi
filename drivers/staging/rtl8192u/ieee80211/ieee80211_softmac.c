@@ -2766,7 +2766,7 @@ static int ieee80211_wpa_enable(struct ieee80211_device *ieee, int value)
 {
 	/* This is called when wpa_supplicant loads and closes the driver
 	 * interface. */
-	printk("%s WPA\n",value ? "enabling" : "disabling");
+	printk("%s WPA\n", value ? "enabling" : "disabling");
 	ieee->wpa_enabled = value;
 	return 0;
 }
@@ -2869,7 +2869,7 @@ static int ieee80211_wpa_set_auth_algs(struct ieee80211_device *ieee, int value)
 
 static int ieee80211_wpa_set_param(struct ieee80211_device *ieee, u8 name, u32 value)
 {
-	int ret=0;
+	int ret = 0;
 	unsigned long flags;
 
 	switch (name) {
@@ -2878,7 +2878,7 @@ static int ieee80211_wpa_set_param(struct ieee80211_device *ieee, u8 name, u32 v
 		break;
 
 	case IEEE_PARAM_TKIP_COUNTERMEASURES:
-		ieee->tkip_countermeasures=value;
+		ieee->tkip_countermeasures = value;
 		break;
 
 	case IEEE_PARAM_DROP_UNENCRYPTED: {
@@ -2915,7 +2915,7 @@ static int ieee80211_wpa_set_param(struct ieee80211_device *ieee, u8 name, u32 v
 	}
 
 	case IEEE_PARAM_PRIVACY_INVOKED:
-		ieee->privacy_invoked=value;
+		ieee->privacy_invoked = value;
 		break;
 
 	case IEEE_PARAM_AUTH_ALGS:
@@ -2923,7 +2923,7 @@ static int ieee80211_wpa_set_param(struct ieee80211_device *ieee, u8 name, u32 v
 		break;
 
 	case IEEE_PARAM_IEEE_802_1X:
-		ieee->ieee802_1x=value;
+		ieee->ieee802_1x = value;
 		break;
 	case IEEE_PARAM_WPAX_SELECT:
 		// added for WPA2 mixed mode
@@ -2934,7 +2934,7 @@ static int ieee80211_wpa_set_param(struct ieee80211_device *ieee, u8 name, u32 v
 		break;
 
 	default:
-		printk("Unknown WPA param: %d\n",name);
+		printk("Unknown WPA param: %d\n", name);
 		ret = -EOPNOTSUPP;
 	}
 
@@ -3107,7 +3107,7 @@ static inline struct sk_buff *ieee80211_disassociate_skb(
 	if (!skb)
 		return NULL;
 
-	disass = (struct ieee80211_disassoc *) skb_put(skb,sizeof(struct ieee80211_disassoc));
+	disass = (struct ieee80211_disassoc *) skb_put(skb, sizeof(struct ieee80211_disassoc));
 	disass->header.frame_ctl = cpu_to_le16(IEEE80211_STYPE_DISASSOC);
 	disass->header.duration_id = 0;
 
@@ -3129,7 +3129,7 @@ SendDisassociation(
 {
 		struct ieee80211_network *beacon = &ieee->current_network;
 		struct sk_buff *skb;
-		skb = ieee80211_disassociate_skb(beacon,ieee,asRsn);
+		skb = ieee80211_disassociate_skb(beacon, ieee, asRsn);
 		if (skb) {
 				softmac_mgmt_xmit(skb, ieee);
 				//dev_kfree_skb_any(skb);//edit by thomas
@@ -3140,7 +3140,7 @@ EXPORT_SYMBOL(SendDisassociation);
 int ieee80211_wpa_supplicant_ioctl(struct ieee80211_device *ieee, struct iw_point *p)
 {
 	struct ieee_param *param;
-	int ret=0;
+	int ret = 0;
 
 	mutex_lock(&ieee->wx_mutex);
 	//IEEE_DEBUG_INFO("wpa_supplicant: len=%d\n", p->length);

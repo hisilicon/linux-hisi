@@ -151,8 +151,6 @@ struct recv_stat {
 	__le32 rxdw5;
 };
 
-#define EOR BIT(30)
-
 /*
 accesser of recv_priv: rtw_recv_entry(dispatch / passive level);
 recv_thread(passive) ; returnpkt(dispatch)
@@ -179,8 +177,6 @@ struct recv_priv {
 	struct recv_buf *precv_buf;    /*  4 alignment */
 	struct __queue free_recv_buf_queue;
 	/* For display the phy informatiom */
-	u8 is_signal_dbg;	/*  for debug */
-	u8 signal_strength_dbg;	/*  for debug */
 	s8 rssi;
 	s8 rxpwdb;
 	u8 signal_strength;
@@ -233,7 +229,6 @@ struct recv_frame {
 	struct adapter  *adapter;
 	struct rx_pkt_attrib attrib;
 	uint  len;
-	u8 *rx_head;
 	u8 *rx_data;
 	u8 *rx_tail;
 	u8 *rx_end;
@@ -257,14 +252,6 @@ void rtw_free_recvframe_queue(struct __queue *pframequeue,
 u32 rtw_free_uc_swdec_pending_queue(struct adapter *adapter);
 
 void rtw_reordering_ctrl_timeout_handler(unsigned long data);
-
-static inline u8 *get_rxmem(struct recv_frame *precvframe)
-{
-	/* always return rx_head... */
-	if (precvframe == NULL)
-		return NULL;
-	return precvframe->rx_head;
-}
 
 static inline u8 *recvframe_pull(struct recv_frame *precvframe, int sz)
 {

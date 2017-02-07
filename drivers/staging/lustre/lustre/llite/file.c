@@ -122,26 +122,25 @@ static int ll_close_inode_openhandle(struct obd_export *md_exp,
 				     enum mds_op_bias bias,
 				     void *data)
 {
-	struct obd_export *exp = ll_i2mdexp(inode);
+	const struct ll_inode_info *lli = ll_i2info(inode);
 	struct md_op_data *op_data;
 	struct ptlrpc_request *req = NULL;
-	struct obd_device *obd = class_exp2obd(exp);
 	int rc;
 
-	if (!obd) {
-		/*
-		 * XXX: in case of LMV, is this correct to access
-		 * ->exp_handle?
-		 */
-		CERROR("Invalid MDC connection handle %#llx\n",
-		       ll_i2mdexp(inode)->exp_handle.h_cookie);
+	if (!class_exp2obd(md_exp)) {
+		CERROR("%s: invalid MDC connection handle closing " DFID "\n",
+		       ll_get_fsname(inode->i_sb, NULL, 0),
+		       PFID(&lli->lli_fid));
 		rc = 0;
 		goto out;
 	}
 
 	op_data = kzalloc(sizeof(*op_data), GFP_NOFS);
+	/*
+	 * We leak openhandle and request here on error, but not much to be
+	 * done in OOM case since app won't retry close on error either.
+	 */
 	if (!op_data) {
-		/* XXX We leak openhandle and request here. */
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -170,10 +169,9 @@ static int ll_close_inode_openhandle(struct obd_export *md_exp,
 	}
 
 	rc = md_close(md_exp, op_data, och->och_mod, &req);
-	if (rc) {
-		CERROR("%s: inode "DFID" mdc close failed: rc = %d\n",
-		       ll_i2mdexp(inode)->exp_obd->obd_name,
-		       PFID(ll_inode2fid(inode)), rc);
+	if (rc && rc != -EINTR) {
+		CERROR("%s: inode " DFID " mdc close failed: rc = %d\n",
+		       md_exp->exp_obd->obd_name, PFID(&lli->lli_fid), rc);
 	}
 
 	if (op_data->op_bias & (MDS_HSM_RELEASE | MDS_CLOSE_LAYOUT_SWAP) &&
@@ -192,8 +190,7 @@ out:
 	och->och_fh.cookie = DEAD_HANDLE_MAGIC;
 	kfree(och);
 
-	if (req) /* This is close request */
-		ptlrpc_req_finished(req);
+	ptlrpc_req_finished(req);
 	return rc;
 }
 
@@ -419,6 +416,17 @@ static int ll_intent_file_open(struct dentry *de, void *lmm, int lmmsize,
 out:
 	ptlrpc_req_finished(req);
 	ll_intent_drop_lock(itp);
+
+	/*
+	 * We did open by fid, but by the time we got to the server,
+	 * the object disappeared. If this is a create, we cannot really
+	 * tell the userspace that the file it was trying to create
+	 * does not exist. Instead let's return -ESTALE, and the VFS will
+	 * retry the create with LOOKUP_REVAL that we are going to catch
+	 * in ll_revalidate_dentry() and use lookup then.
+	 */
+	if (rc == -ENOENT && itp->it_op & IT_CREAT)
+		rc = -ESTALE;
 
 	return rc;
 }
@@ -1016,7 +1024,7 @@ static bool file_is_noatime(const struct file *file)
 	return false;
 }
 
-void ll_io_init(struct cl_io *io, const struct file *file, int write)
+static void ll_io_init(struct cl_io *io, const struct file *file, int write)
 {
 	struct inode *inode = file_inode(file);
 
@@ -1821,7 +1829,7 @@ free:
 	return rc;
 }
 
-static int ll_hsm_state_set(struct inode *inode, struct hsm_state_set *hss)
+int ll_hsm_state_set(struct inode *inode, struct hsm_state_set *hss)
 {
 	struct md_op_data	*op_data;
 	int			 rc;
@@ -1883,7 +1891,7 @@ static int ll_hsm_import(struct inode *inode, struct file *file,
 		goto free_hss;
 	}
 
-	attr->ia_mode = hui->hui_mode & (S_IRWXU | S_IRWXG | S_IRWXO);
+	attr->ia_mode = hui->hui_mode & 0777;
 	attr->ia_mode |= S_IFREG;
 	attr->ia_uid = make_kuid(&init_user_ns, hui->hui_uid);
 	attr->ia_gid = make_kgid(&init_user_ns, hui->hui_gid);

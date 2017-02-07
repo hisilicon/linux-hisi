@@ -25,8 +25,9 @@ void sm750_set_chip_type(unsigned short devId, u8 revId)
 			chip = SM750LE;
 			pr_info("found sm750le\n");
 		}
-	} else
+	} else {
 		chip = SM_UNKNOWN;
+	}
 }
 
 static unsigned int get_mxclk_freq(void)
@@ -244,7 +245,6 @@ int ddk750_init_hw(struct initchip_param *pInitParam)
 	/* Set up master clock */
 	set_master_clock(MHz(pInitParam->masterClock));
 
-
 	/*
 	 * Reset the memory controller.
 	 * If the memory controller is not reset in SM750,
@@ -407,5 +407,3 @@ unsigned int sm750_format_pll_reg(struct pll_value *pPLL)
 
 	return reg;
 }
-
-

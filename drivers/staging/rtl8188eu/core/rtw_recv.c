@@ -211,6 +211,7 @@ u32 rtw_free_uc_swdec_pending_queue(struct adapter *adapter)
 {
 	u32 cnt = 0;
 	struct recv_frame *pending_frame;
+
 	while ((pending_frame = rtw_alloc_recvframe(&adapter->recvpriv.uc_swdec_pending_queue))) {
 		rtw_free_recvframe(pending_frame, &adapter->recvpriv.free_recv_queue);
 		DBG_88E("%s: dequeue uc_swdec_pending_queue\n", __func__);
@@ -296,6 +297,7 @@ static int recvframe_chkmic(struct adapter *adapter,
 					 *(pframemic-10), *(pframemic-9)));
 				{
 					uint i;
+
 					RT_TRACE(_module_rtl871x_recv_c_, _drv_err_,
 						 ("\n ======demp packet (len=%d)======\n",
 						 precvframe->len));
@@ -373,6 +375,7 @@ static struct recv_frame *decryptor(struct adapter *padapter,
 
 	if (prxattrib->encrypt > 0) {
 		u8 *iv = precv_frame->rx_data+prxattrib->hdrlen;
+
 		prxattrib->key_index = (((iv[3])>>6)&0x3);
 
 		if (prxattrib->key_index > WEP_KEYS) {
@@ -647,7 +650,6 @@ int sta2sta_data_frame(
 int sta2sta_data_frame(struct adapter *adapter, struct recv_frame *precv_frame,
 		       struct sta_info **psta)
 {
-	u8 *ptr = precv_frame->rx_data;
 	int ret = _SUCCESS;
 	struct rx_pkt_attrib *pattrib = &precv_frame->attrib;
 	struct	sta_priv *pstapriv = &adapter->stapriv;
@@ -703,14 +705,6 @@ int sta2sta_data_frame(struct adapter *adapter, struct recv_frame *precv_frame,
 
 			sta_addr = pattrib->src;
 		}
-	} else if (check_fwstate(pmlmepriv, WIFI_MP_STATE)) {
-		memcpy(pattrib->dst, GetAddr1Ptr(ptr), ETH_ALEN);
-		memcpy(pattrib->src, GetAddr2Ptr(ptr), ETH_ALEN);
-		memcpy(pattrib->bssid, GetAddr3Ptr(ptr), ETH_ALEN);
-		memcpy(pattrib->ra, pattrib->dst, ETH_ALEN);
-		memcpy(pattrib->ta, pattrib->src, ETH_ALEN);
-
-		sta_addr = mybssid;
 	} else {
 		ret  = _FAIL;
 	}
@@ -799,23 +793,6 @@ static int ap2sta_data_frame(
 			ret = RTW_RX_HANDLED;
 			goto exit;
 		}
-	} else if ((check_fwstate(pmlmepriv, WIFI_MP_STATE) == true) &&
-		   (check_fwstate(pmlmepriv, _FW_LINKED) == true)) {
-		memcpy(pattrib->dst, GetAddr1Ptr(ptr), ETH_ALEN);
-		memcpy(pattrib->src, GetAddr2Ptr(ptr), ETH_ALEN);
-		memcpy(pattrib->bssid, GetAddr3Ptr(ptr), ETH_ALEN);
-		memcpy(pattrib->ra, pattrib->dst, ETH_ALEN);
-		memcpy(pattrib->ta, pattrib->src, ETH_ALEN);
-
-		/*  */
-		memcpy(pattrib->bssid,  mybssid, ETH_ALEN);
-
-		*psta = rtw_get_stainfo(pstapriv, pattrib->bssid); /*  get sta_info */
-		if (*psta == NULL) {
-			RT_TRACE(_module_rtl871x_recv_c_, _drv_err_, ("can't get psta under MP_MODE ; drop pkt\n"));
-			ret = _FAIL;
-			goto exit;
-		}
 	} else if (check_fwstate(pmlmepriv, WIFI_AP_STATE)) {
 		/* Special case */
 		ret = RTW_RX_HANDLED;
@@ -880,6 +857,7 @@ static int sta2ap_data_frame(struct adapter *adapter,
 		}
 	} else {
 		u8 *myhwaddr = myid(&adapter->eeprompriv);
+
 		if (memcmp(pattrib->ra, myhwaddr, ETH_ALEN)) {
 			ret = RTW_RX_HANDLED;
 			goto exit;
@@ -1115,11 +1093,10 @@ static int validate_recv_data_frame(struct adapter *adapter,
 		break;
 	}
 
-	if (ret == _FAIL) {
+	if (ret == _FAIL)
 		goto exit;
-	} else if (ret == RTW_RX_HANDLED) {
+	else if (ret == RTW_RX_HANDLED)
 		goto exit;
-	}
 
 	if (psta == NULL) {
 		RT_TRACE(_module_rtl871x_recv_c_, _drv_err_, (" after to_fr_ds_chk; psta==NULL\n"));
@@ -1197,6 +1174,7 @@ static int validate_recv_frame(struct adapter *adapter,
 
 	if (pmlmeext->sitesurvey_res.state == SCAN_PROCESS) {
 		int ch_set_idx = rtw_ch_set_search_ch(pmlmeext->channel_set, rtw_get_oper_ch(adapter));
+
 		if (ch_set_idx >= 0)
 			pmlmeext->channel_set[ch_set_idx].rx_count++;
 	}
@@ -1265,6 +1243,7 @@ static int validate_recv_frame(struct adapter *adapter,
 		retval = validate_recv_data_frame(adapter, precv_frame);
 		if (retval == _FAIL) {
 			struct recv_priv *precvpriv = &adapter->recvpriv;
+
 			precvpriv->rx_drop++;
 		}
 		break;
@@ -1303,8 +1282,6 @@ static int wlanhdr_to_ethhdr(struct recv_frame *precvframe)
 	u8	*psnap_type;
 	struct ieee80211_snap_hdr	*psnap;
 
-	struct adapter		*adapter = precvframe->adapter;
-	struct mlme_priv	*pmlmepriv = &adapter->mlmepriv;
 	u8 *ptr = precvframe->rx_data;
 	struct rx_pkt_attrib *pattrib = &precvframe->attrib;
 
@@ -1335,19 +1312,9 @@ static int wlanhdr_to_ethhdr(struct recv_frame *precvframe)
 	eth_type = ntohs(be_tmp); /* pattrib->ether_type */
 	pattrib->eth_type = eth_type;
 
-	if ((check_fwstate(pmlmepriv, WIFI_MP_STATE))) {
-		ptr += rmv_len;
-		*ptr = 0x87;
-		*(ptr+1) = 0x12;
-
-		eth_type = 0x8712;
-		/*  append rx status for mp test packets */
-		ptr = recvframe_pull(precvframe, (rmv_len-sizeof(struct ethhdr)+2)-24);
-		memcpy(ptr, get_rxmem(precvframe), 24);
-		ptr += 24;
-	} else {
-		ptr = recvframe_pull(precvframe, (rmv_len-sizeof(struct ethhdr) + (bsnaphdr ? 2 : 0)));
-	}
+	ptr = recvframe_pull(precvframe, (rmv_len-sizeof(struct ethhdr) + (bsnaphdr ? 2 : 0)));
+	if (!ptr)
+		return _FAIL;
 
 	memcpy(ptr, pattrib->dst, ETH_ALEN);
 	memcpy(ptr+ETH_ALEN, pattrib->src, ETH_ALEN);
@@ -1466,6 +1433,7 @@ struct recv_frame *recvframe_chk_defrag(struct adapter *padapter,
 	psta = rtw_get_stainfo(pstapriv, psta_addr);
 	if (psta == NULL) {
 		u8 type = GetFrameType(pfhdr->rx_data);
+
 		if (type != WIFI_DATA_TYPE) {
 			psta = rtw_get_bcmc_stainfo(padapter);
 			pdefrag_q = &psta->sta_recvpriv.defrag_q;
@@ -1548,8 +1516,8 @@ static int amsdu_to_msdu(struct adapter *padapter, struct recv_frame *prframe)
 	struct sk_buff *sub_skb, *subframes[MAX_SUBFRAME_COUNT];
 	struct recv_priv *precvpriv = &padapter->recvpriv;
 	struct __queue *pfree_recv_queue = &(precvpriv->free_recv_queue);
-	nr_subframes = 0;
 
+	nr_subframes = 0;
 	pattrib = &prframe->attrib;
 
 	recvframe_pull(prframe, prframe->attrib.hdrlen);
@@ -1606,9 +1574,9 @@ static int amsdu_to_msdu(struct adapter *padapter, struct recv_frame *prframe)
 			if (padding_len == 4)
 				padding_len = 0;
 
-			if (a_len < padding_len) {
+			if (a_len < padding_len)
 				goto exit;
-			}
+
 			pdata += padding_len;
 			a_len -= padding_len;
 		}
@@ -2064,45 +2032,48 @@ static void rtw_signal_stat_timer_hdl(unsigned long data)
 	u8 avg_signal_qual = 0;
 	u8 _alpha = 3; /*  this value is based on converging_constant = 5000 and sampling_interval = 1000 */
 
-	if (adapter->recvpriv.is_signal_dbg) {
-		/* update the user specific value, signal_strength_dbg, to signal_strength, rssi */
-		adapter->recvpriv.signal_strength = adapter->recvpriv.signal_strength_dbg;
-		adapter->recvpriv.rssi = (s8)translate_percentage_to_dbm((u8)adapter->recvpriv.signal_strength_dbg);
-	} else {
-		if (recvpriv->signal_strength_data.update_req == 0) {/*  update_req is clear, means we got rx */
-			avg_signal_strength = recvpriv->signal_strength_data.avg_val;
-			/*  after avg_vals are acquired, we can re-stat the signal values */
-			recvpriv->signal_strength_data.update_req = 1;
-		}
-
-		if (recvpriv->signal_qual_data.update_req == 0) {/*  update_req is clear, means we got rx */
-			avg_signal_qual = recvpriv->signal_qual_data.avg_val;
-			/*  after avg_vals are acquired, we can re-stat the signal values */
-			recvpriv->signal_qual_data.update_req = 1;
-		}
-
-		/* update value of signal_strength, rssi, signal_qual */
-		if (check_fwstate(&adapter->mlmepriv, _FW_UNDER_SURVEY) == false) {
-			tmp_s = avg_signal_strength+(_alpha-1)*recvpriv->signal_strength;
-			if (tmp_s % _alpha)
-				tmp_s = tmp_s/_alpha + 1;
-			else
-				tmp_s = tmp_s/_alpha;
-			if (tmp_s > 100)
-				tmp_s = 100;
-
-			tmp_q = avg_signal_qual+(_alpha-1)*recvpriv->signal_qual;
-			if (tmp_q % _alpha)
-				tmp_q = tmp_q/_alpha + 1;
-			else
-				tmp_q = tmp_q/_alpha;
-			if (tmp_q > 100)
-				tmp_q = 100;
-
-			recvpriv->signal_strength = tmp_s;
-			recvpriv->rssi = (s8)translate_percentage_to_dbm(tmp_s);
-			recvpriv->signal_qual = tmp_q;
-		}
+	if (recvpriv->signal_strength_data.update_req == 0) {
+		/* update_req is clear, means we got rx */
+		avg_signal_strength = recvpriv->signal_strength_data.avg_val;
+		/* after avg_vals are acquired, we can re-stat the signal
+		 * values
+		 */
+		recvpriv->signal_strength_data.update_req = 1;
 	}
+
+	if (recvpriv->signal_qual_data.update_req == 0) {
+		/* update_req is clear, means we got rx */
+		avg_signal_qual = recvpriv->signal_qual_data.avg_val;
+		/* after avg_vals are acquired, we can re-stat the signal
+		 * values
+		 */
+		recvpriv->signal_qual_data.update_req = 1;
+	}
+
+	/* update value of signal_strength, rssi, signal_qual */
+	if (check_fwstate(&adapter->mlmepriv, _FW_UNDER_SURVEY) == false) {
+		tmp_s = avg_signal_strength +
+			(_alpha - 1) * recvpriv->signal_strength;
+		if (tmp_s % _alpha)
+			tmp_s = tmp_s / _alpha + 1;
+		else
+			tmp_s = tmp_s / _alpha;
+		if (tmp_s > 100)
+			tmp_s = 100;
+
+		tmp_q = avg_signal_qual +
+			(_alpha - 1) * recvpriv->signal_qual;
+		if (tmp_q % _alpha)
+			tmp_q = tmp_q / _alpha + 1;
+		else
+			tmp_q = tmp_q / _alpha;
+		if (tmp_q > 100)
+			tmp_q = 100;
+
+		recvpriv->signal_strength = tmp_s;
+		recvpriv->rssi = (s8)translate_percentage_to_dbm(tmp_s);
+		recvpriv->signal_qual = tmp_q;
+	}
+
 	rtw_set_signal_stat_timer(recvpriv);
 }
