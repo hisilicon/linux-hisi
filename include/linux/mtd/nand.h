@@ -615,7 +615,7 @@ struct nand_buffers {
  * @tALS_min: ALE setup time
  * @tAR_min: ALE to RE# delay
  * @tCEA_max: CE# access time
- * @tCEH_min:
+ * @tCEH_min: CE# high hold time
  * @tCH_min:  CE# hold time
  * @tCHZ_max: CE# high to output hi-Z
  * @tCLH_min: CLE hold time
@@ -801,6 +801,7 @@ nand_get_sdr_timings(const struct nand_data_interface *conf)
  *			supported, 0 otherwise.
  * @jedec_params:	[INTERN] holds the JEDEC parameter page when JEDEC is
  *			supported, 0 otherwise.
+ * @data_interface:	[INTERN] NAND interface timing information
  * @read_retries:	[INTERN] the number of read retry modes supported
  * @onfi_set_features:	[REPLACEABLE] set the features for ONFI nand
  * @onfi_get_features:	[REPLACEABLE] get the features for ONFI nand
@@ -958,6 +959,7 @@ static inline void nand_set_controller_data(struct nand_chip *chip, void *priv)
 #define NAND_MFR_SANDISK	0x45
 #define NAND_MFR_INTEL		0x89
 #define NAND_MFR_ATO		0x9b
+#define NAND_MFR_WINBOND	0xef
 
 /* The maximum expected count of bytes in the NAND ID sequence */
 #define NAND_MAX_ID_LEN 8
