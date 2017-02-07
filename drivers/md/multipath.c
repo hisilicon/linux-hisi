@@ -89,6 +89,10 @@ static void multipath_end_request(struct bio *bio)
 	struct mpconf *conf = mp_bh->mddev->private;
 	struct md_rdev *rdev = conf->multipaths[mp_bh->path].rdev;
 
+	if (bio_op(bio) == REQ_OP_WRITE_SAME && bio->bi_error == -EREMOTEIO &&
+	    !bdev_get_queue(bio->bi_bdev)->limits.max_write_same_sectors)
+		mp_bh->mddev->queue->limits.max_write_same_sectors = 0;
+
 	if (!bio->bi_error)
 		multipath_end_bh_io(mp_bh, 0);
 	else if (!(bio->bi_opf & REQ_RAHEAD)) {

@@ -503,6 +503,8 @@ static void raid0_make_request(struct mddev *mddev, struct bio *bio)
 				trace_block_bio_remap(bdev_get_queue(split->bi_bdev),
 						      split, disk_devt(mddev->gendisk),
 						      bio_sector);
+			if (bio_op(split) == REQ_OP_WRITE_SAME)
+				md_writesame_setup(mddev, split);
 			generic_make_request(split);
 		}
 	} while (split != bio);
