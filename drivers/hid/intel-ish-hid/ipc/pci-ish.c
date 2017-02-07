@@ -24,7 +24,6 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
-#include <linux/miscdevice.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/intel_ish.h>
 #include "ishtp-dev.h"
@@ -47,7 +46,8 @@ MODULE_DEVICE_TABLE(pci, ish_pci_tbl);
  *
  * Callback to direct log messages to Linux trace buffers
  */
-static void ish_event_tracer(struct ishtp_device *dev, char *format, ...)
+static __printf(2, 3)
+void ish_event_tracer(struct ishtp_device *dev, const char *format, ...)
 {
 	if (trace_ishtp_dump_enabled()) {
 		va_list args;
