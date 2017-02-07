@@ -812,8 +812,6 @@ void setup_hugetlbfs(void)
 {
 	int err;
 	int fd;
-	int validated_nr_pages;
-	int i;
 	char buf[] = "123";
 
 	if (geteuid() != 0) {
@@ -1116,11 +1114,6 @@ void test_pkey_syscalls_on_non_allocated_pkey(int *ptr, u16 pkey)
 		err = sys_pkey_free(i);
 		pkey_assert(err);
 
-		/* not enforced when pkey_get() is not a syscall
-		err = pkey_get(i, 0);
-		pkey_assert(err < 0);
-		*/
-
 		err = sys_pkey_free(i);
 		pkey_assert(err);
 
@@ -1133,13 +1126,7 @@ void test_pkey_syscalls_on_non_allocated_pkey(int *ptr, u16 pkey)
 void test_pkey_syscalls_bad_args(int *ptr, u16 pkey)
 {
 	int err;
-	int bad_flag = (PKEY_DISABLE_ACCESS | PKEY_DISABLE_WRITE) + 1;
 	int bad_pkey = NR_PKEYS+99;
-
-	/* not enforced when pkey_get() is not a syscall
-	err = pkey_get(bad_pkey, bad_flag);
-	pkey_assert(err < 0);
-	*/
 
 	/* pass a known-invalid pkey in: */
 	err = sys_mprotect_pkey(ptr, PAGE_SIZE, PROT_READ, bad_pkey);
@@ -1149,8 +1136,6 @@ void test_pkey_syscalls_bad_args(int *ptr, u16 pkey)
 /* Assumes that all pkeys other than 'pkey' are unallocated */
 void test_pkey_alloc_exhaust(int *ptr, u16 pkey)
 {
-	unsigned long flags;
-	unsigned long init_val;
 	int err;
 	int allocated_pkeys[NR_PKEYS] = {0};
 	int nr_allocated_pkeys = 0;
