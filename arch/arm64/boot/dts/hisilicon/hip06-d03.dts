@@ -50,9 +50,9 @@
 };
 
 &usb_ohci {
-	status = "ok";
+	status = "disabled";
 };
 
 &usb_ehci {
-	status = "ok";
+	status = "disabled";
 };

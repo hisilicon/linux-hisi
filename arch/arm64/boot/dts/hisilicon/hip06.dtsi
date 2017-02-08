@@ -292,6 +292,13 @@
 			num-pins = <128>;
 		};
 
+		mbigen_smmu_pcie_intc: intc_smmu_pcie {
+			msi-parent = <&its_dsa 0x40b0c>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			num-pins = <3>;
+		};
+
 		mbigen_pcie0: intc_pcie0 {
 			msi-parent = <&its_dsa 0x40085>;
 			interrupt-controller;
@@ -318,6 +325,43 @@
 			#interrupt-cells = <2>;
 			num-pins = <128>;
 		};
+
+		mbigen_smmu_dsa_intc: intc_smmu_dsa {
+			msi-parent = <&its_dsa 0x40b20>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			num-pins = <3>;
+		};
+
+	};
+
+	smmu0: smmu_pcie {
+		compatible = "arm,smmu-v3";
+		reg = <0x0 0xa0040000 0x0 0x20000>;
+		interrupt-parent  = <&mbigen_smmu_pcie_intc>;
+		interrupts = <871 1>,
+			<872 1>,
+			<873 1>;
+
+		interrupt-names = "eventq", "gerror", "priq";
+		#iommu-cells = <1>;
+		dma-coherent;
+		smmu-cb-memtype = <0x0 0x1>;
+		hisilicon,broken-prefetch-cmd;
+	};
+
+	smmu1: smmu_dsa {
+			compatible = "arm,smmu-v3";
+			reg = <0x0 0xc0040000 0x0 0x20000>;
+			interrupt-parent  = <&mbigen_smmu_dsa_intc>;
+			interrupts = <733 1>,
+						 <734 1>,
+						 <735 1>;
+			interrupt-names = "eventq", "gerror", "priq";
+			#iommu-cells = <1>;
+			dma-coherent;
+			smmu-cb-memtype = <0x0 0x1>;
+			hisilicon,broken-prefetch-cmd;
 	};
 
 	soc {
@@ -424,6 +468,7 @@
 			reg-names = "ppe-base", "dsaf-base";
 			interrupt-parent = <&mbigen_dsaf0>;
 			subctrl-syscon = <&dsa_subctrl>;
+			iommus = <&smmu1 0x0>;
 			reset-field-offset = <0>;
 			interrupts =
 			<576 1>, <577 1>, <578 1>, <579 1>, <580 1>,
@@ -639,6 +684,7 @@
 			queue-count = <16>;
 			phy-count = <8>;
 			dma-coherent;
+			iommus = <&smmu0 0x40000>;
 			interrupt-parent = <&mbigen_sas1>;
 			interrupts = <64 4>,<65 4>,<66 4>,<67 4>,<68 4>,
 				     <69 4>,<70 4>,<71 4>,<72 4>,<73 4>,
@@ -721,6 +767,7 @@
 			#size-cells = <2>;
 			device_type = "pci";
 			dma-coherent;
+			/*iommu-map = <0x0 &smmu0 0x0 0x10000>;*/
 			ranges = <0x02000000 0 0xb2000000 0x0 0xb2000000 0 0x5ff0000
 				  0x01000000 0 0 0 0xb7ff0000 0 0x10000>;
 			#interrupt-cells = <1>;
