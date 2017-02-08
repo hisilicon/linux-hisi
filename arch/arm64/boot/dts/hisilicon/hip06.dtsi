@@ -324,6 +324,32 @@
 			#clock-cells = <0>;
 		};
 
+		isa@a01b0000 {
+			compatible = "hisilicon,low-pin-count";
+			#address-cells = <2>;
+			#size-cells = <1>;
+			reg = <0x0 0xa01b0000 0x0 0x1000>;
+			ranges = <0x01 0x0 0x0 0x0 0x1000>;
+
+			uart0: lpc-uart@2f8 {
+				compatible = "hisilicon,lpc-uart";
+				reg = <0x01 0x2f8 0x08>;
+				indirect-io;
+				status = "disabled";
+			};
+
+			ipmi0: bt@e4 {
+				compatible = "ipmi-bt";
+				device_type = "ipmi";
+				reg = <0x1 0xe4 0x04>;
+				/*reg-size = <0x01>;*/
+				/*reg-spacing = <0x01>;*/
+				/*reg-shift = <0x0>;*/
+				indirect-io;
+				status = "disabled";
+			};
+		};
+
 		usb_ohci: ohci@a7030000 {
 			compatible = "generic-ohci";
 			reg = <0x0 0xa7030000 0x0 0x10000>;
