@@ -155,7 +155,7 @@
 
 			CPU_NAP: cpu-nap {
 				compatible = "arm,idle-state";
-				arm,psci-suspend-param = <0x0000001>;
+				arm,psci-suspend-param = <0x0000002>;
 				entry-latency-us = <7>;
 				exit-latency-us = <2>;
 				min-residency-us = <15>;
@@ -164,7 +164,7 @@
 			CPU_SLEEP: cpu-sleep {
 				compatible = "arm,idle-state";
 				local-timer-stop;
-				arm,psci-suspend-param = <0x0010000>;
+				arm,psci-suspend-param = <0x0010003>;
 				entry-latency-us = <40>;
 				exit-latency-us = <70>;
 				min-residency-us = <3000>;
@@ -173,7 +173,7 @@
 			CLUSTER_SLEEP_0: cluster-sleep-0 {
 				compatible = "arm,idle-state";
 				local-timer-stop;
-				arm,psci-suspend-param = <0x1010000>;
+				arm,psci-suspend-param = <0x1010033>;
 				entry-latency-us = <500>;
 				exit-latency-us = <5000>;
 				min-residency-us = <20000>;
@@ -182,7 +182,7 @@
 			CLUSTER_SLEEP_1: cluster-sleep-1 {
 				compatible = "arm,idle-state";
 				local-timer-stop;
-				arm,psci-suspend-param = <0x1010000>;
+				arm,psci-suspend-param = <0x1010033>;
 				entry-latency-us = <1000>;
 				exit-latency-us = <5000>;
 				min-residency-us = <20000>;
